@@ -1,0 +1,9 @@
+# This repo is PUBLIC. Everything derived from class recordings stays local.
+# The transcripts hold classmates' and professors' speech; weights trained on
+# them can regurgitate it, so checkpoints never get committed or uploaded either.
+data/
+checkpoints/
+runs/
+
+# Upstream training code, cloned separately (commit pinned in README.md)
+nanochat/

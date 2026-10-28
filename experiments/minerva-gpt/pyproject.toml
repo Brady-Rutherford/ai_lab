@@ -1,0 +1,22 @@
+[project]
+name = "minerva-gpt"
+version = "0.1.0"
+description = "Post-train an open base model to answer like me in class (data stays local)"
+requires-python = ">=3.12"
+dependencies = [
+    "torch",
+    "transformers",
+    "peft",
+    "trl",
+    "datasets",
+    "accelerate",
+    "sentence-transformers",
+    "rank-bm25",
+    "scikit-learn",
+    "pandas",
+    "pyarrow",
+    "python-dotenv",
+]
+
+[tool.uv]
+package = false
