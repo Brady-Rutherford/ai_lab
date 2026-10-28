@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minerva-GPT ranking</title>
+<!-- Local only: served by rank_server.py on 127.0.0.1, loads nothing external. -->
+<style>
+  :root {
+    --bg: #f7f7f5; --card: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc;
+    --accent: #2f5bd3; --yes: #1f7a4d; --no: #b3412e; --chip: #eef1fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --card: #1e1e1c; --ink: #ecece8; --muted: #9a9a93; --line: #33332f;
+      --accent: #7c9cff; --yes: #4cc38a; --no: #ff8a73; --chip: #24283a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 20px; margin: 0; }
+  nav button { border: 1px solid var(--line); background: var(--card); color: var(--ink);
+               padding: 6px 14px; border-radius: 999px; cursor: pointer; font: inherit; }
+  nav button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .meta { color: var(--muted); font-size: 14px; margin: 8px 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+  .label { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ask .text { max-height: 340px; overflow-y: auto; font-size: 15px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+  .choice { border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 6px 12px;
+            border-radius: 8px; cursor: pointer; font: inherit; font-size: 14px; }
+  .choice.yes[aria-pressed="true"] { background: var(--yes); border-color: var(--yes); color: #fff; }
+  .choice.no[aria-pressed="true"] { background: var(--no); border-color: var(--no); color: #fff; }
+  .choice.best[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .choice:disabled { opacity: .35; cursor: not-allowed; }
+  .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+  .primary { background: var(--accent); color: #fff; border: 0; padding: 10px 20px; border-radius: 8px;
+             font: inherit; cursor: pointer; }
+  .primary:disabled { opacity: .4; cursor: not-allowed; }
+  .hint { color: var(--muted); font-size: 14px; }
+  .chip { display: inline-block; background: var(--chip); border-radius: 6px; padding: 2px 8px; font-size: 13px; margin-right: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Does it sound like me?</h1>
+    <nav>
+      <button id="tab-rank" aria-pressed="true">Rank</button>
+      <button id="tab-blind" aria-pressed="false">Blind test</button>
+    </nav>
+  </header>
+  <p class="meta" id="meta"></p>
+  <div id="view"></div>
+</main>
+<script>
+let mode = "rank", current = null, voice = [], best = null;
+const view = document.getElementById("view"), meta = document.getElementById("meta");
+
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? n.className = v : n.setAttribute(k, v);
+  for (const k of kids) n.append(k);  // strings become text nodes, never HTML
+  return n;
+}
+
+function showMeta(s) {
+  const b = s.blind || {}, part = v => b[v] && b[v].n ? `${v}: ${b[v].correct}/${b[v].n} spotted` : `${v}: none yet`;
+  meta.textContent = `${s.ranked} of ${s.total} asks ranked · blind test ${part("A")}, ${part("B")} (50% = indistinguishable)`;
+}
+
+async function load() {
+  const res = await fetch(`/api/next?mode=${mode}`);
+  current = await res.json();
+  showMeta(current);
+  view.replaceChildren();
+  if (current.done) { view.append(el("div", {class: "card"}, "All done for this mode. Thank you.")); return; }
+  view.append(el("div", {class: "card ask"}, el("div", {class: "label"}, "The ask"), el("div", {class: "text"}, current.prompt)));
+  mode === "rank" ? renderRank() : renderBlind();
+}
+
+function renderRank() {
+  voice = current.answers.map(() => null); best = null;
+  view.append(el("p", {class: "hint"}, "Judge every answer, then pick the best of the ones that sound like you."));
+  current.answers.forEach((text, i) => {
+    const yes = el("button", {class: "choice yes", "aria-pressed": "false"}, "Sounds like me");
+    const no = el("button", {class: "choice no", "aria-pressed": "false"}, "Not me");
+    const top = el("button", {class: "choice best", "aria-pressed": "false", disabled: ""}, "Best");
+    yes.onclick = () => setVoice(i, true); no.onclick = () => setVoice(i, false);
+    top.onclick = () => { best = i; refresh(); };
+    view.append(el("div", {class: "card", "data-i": i},
+      el("div", {class: "label"}, `Answer ${i + 1}`), el("div", {class: "text"}, text), el("div", {class: "row"}, yes, no, top)));
+  });
+  const submit = el("button", {class: "primary", id: "submit", disabled: ""}, "Save and next");
+  submit.onclick = () => send("/api/rank", {id: current.id, voice, best});
+  view.append(el("div", {class: "actions"}, submit));
+}
+
+function setVoice(i, ok) { voice[i] = ok; if (!ok && best === i) best = null; refresh(); }
+
+function refresh() {
+  view.querySelectorAll(".card[data-i]").forEach(card => {
+    const i = +card.dataset.i, [yes, no, top] = card.querySelectorAll(".choice");
+    yes.setAttribute("aria-pressed", voice[i] === true); no.setAttribute("aria-pressed", voice[i] === false);
+    top.disabled = voice[i] !== true; top.setAttribute("aria-pressed", best === i);
+  });
+  const anyYes = voice.some(v => v === true), allMarked = voice.every(v => v !== null);
+  document.getElementById("submit").disabled = !(allMarked && (!anyYes || best !== null));
+}
+
+function renderBlind() {
+  view.append(el("p", {class: "hint"}, "One of these is what you really said. Which one?"));
+  current.answers.forEach((text, i) => {
+    const pick = el("button", {class: "primary"}, "This one is mine");
+    pick.onclick = () => send("/api/blind", {id: current.id, guess: i});
+    view.append(el("div", {class: "card"}, el("div", {class: "label"}, `Answer ${i + 1}`),
+      el("div", {class: "text"}, text), el("div", {class: "actions"}, pick)));
+  });
+}
+
+async function send(url, body) {
+  await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  load();
+}
+
+for (const m of ["rank", "blind"]) document.getElementById(`tab-${m}`).onclick = () => {
+  mode = m;
+  for (const n of ["rank", "blind"]) document.getElementById(`tab-${n}`).setAttribute("aria-pressed", n === m);
+  load();
+};
+load();
+</script>
+</body>
+</html>
