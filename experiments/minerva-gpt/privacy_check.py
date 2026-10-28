@@ -19,7 +19,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from names import is_ambiguous, is_common_word_name, needles, nickname_re
+from names import is_ambiguous, is_common_word_name, needles, nickname_re, unrostered_names
 
 SAMPLES = 12
 
@@ -55,6 +55,10 @@ def main(paths):
                     for m in nickname_re().finditer(text):
                         definite[(field, "short_name")] += 1
                         print(f"{path}:{n}: {field} short_name {redact(m.group(0))}")
+                if field != "header":
+                    for start, end in unrostered_names(text):
+                        definite[(field, "called_on")] += 1
+                        print(f"{path}:{n}: {field} called_on {redact(text[start:end])}")
     print(f"privacy scan: {len(files)} files | definite hits: {sum(definite.values())} "
           f"{dict(definite)} | ambiguous: {sum(ambiguous.values())} {dict(ambiguous)}")
     if by_term:
