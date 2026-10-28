@@ -54,26 +54,27 @@ def check_vllm():
     return "vllm {} (torch {}) in its own environment".format(*out.stdout.split())
 
 
-def check_flash():
-    try:
-        import flash_attn  # noqa: F401
-        return "flash-attn installed: --attn flash_attention_2 --packing is available"
-    except ImportError:
-        return "flash-attn not installed: train with sdpa (the default), no --packing"
+def check_fast_path():
+    from kernels import get_kernel
+
+    get_kernel("kernels-community/vllm-flash-attn3", version=1)  # offline: from setup's cache
+    import liger_kernel  # noqa: F401
+    return "FA3 kernel cached, liger-kernel importable: next, pod/speedcheck.py"
 
 
-CHECKS = [("GPU", check_gpu), ("base model", check_model), ("data", check_data),
-          ("no secrets", check_no_secrets), ("vLLM", check_vllm), ("FlashAttention (optional)", check_flash)]
+CHECKS = [("GPU", check_gpu, True), ("base model", check_model, True), ("data", check_data, True),
+          ("no secrets", check_no_secrets, True), ("vLLM", check_vllm, True),
+          ("fast path (optional)", check_fast_path, False)]
 
 
 def main():
     failed = 0
-    for name, check in CHECKS:
+    for name, check, required in CHECKS:
         try:
             print(f"ok    {name}: {check()}")
         except Exception as e:  # report every check, not just the first failure
-            failed += 1
-            print(f"FAIL  {name}: {e}")
+            failed += required
+            print(f"{'FAIL' if required else 'skip'}  {name}: {e}")
     print("all passed" if not failed else f"{failed} failed")
     return 1 if failed else 0
 

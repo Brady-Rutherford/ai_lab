@@ -55,6 +55,7 @@ ssh HOST -p PORT
 bash ~/minerva-gpt/pod/setup.sh
 cd ~/minerva-gpt && uv run python pod/preflight.py      # must print "all passed"
 GEN_ENGINE=vllm sh smoke_test.sh                          # whole pipeline on fake data, this GPU
+uv run python pod/speedcheck.py                           # turns the fast path on only if proven (~5 min)
 ```
 
 **3. Pod: session 1** (~30-40 min)
@@ -84,10 +85,22 @@ GATE_A=<from session 1> GATE_B=<from session 1> bash ~/minerva-gpt/pod/run_dpo.s
 ```
 Leave a variant's gate unset if its voice-score AUC check failed. Then step 4 again.
 
-## Optional speedups, verified before use
+## Speedups
 
-- **FlashAttention 2 + packing** (`train_sft.py --attn flash_attention_2 --packing`). Install
-  flash-attn into `.venv`. Before switching, run 20 steps both ways and check that the loss
-  curves match. With plain sdpa, packed examples would attend to each other, so `--packing`
-  refuses without FlashAttention.
-- **Bigger batches**: `BATCH=16 bash pod/run.sh` if memory allows.
+| Speedup | How | On when |
+|---|---|---|
+| vLLM sampling | own environment, same token ids as the training tokenizer | always |
+| bf16, bigger batches, no gradient checkpointing | `run.sh` flags | always (speed only) |
+| **FlashAttention 3** | prebuilt Hopper kernel from the kernels hub (`kernels-community/vllm-flash-attn3`); no compiling | after `speedcheck.py` passes |
+| **Packing** (no padding) | TRL padding-free; FlashAttention's variable-length mode keeps packed examples apart | after `speedcheck.py` passes |
+| **Liger kernels** | fused lm_head + loss: the 100K-word logits are never materialized | after `speedcheck.py` passes |
+
+`speedcheck.py` proves two things on this pod before `run.sh` uses the fast path:
+1. **Isolation.** Each example gives the same log-probs packed behind another as alone. A
+   negative control, the same row without position restarts, must differ. On the Mac, sdpa
+   fails this check (2.50 per token), as it should.
+2. **Equivalence.** One epoch on the same 640 examples, verified path vs fast path: val loss
+   within 2%, and actually faster.
+
+If either fails, `run.sh` stays on the verified sdpa path. `BATCH=16 bash pod/run.sh` trades
+memory for speed.

@@ -9,12 +9,16 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 cd "$HOME/minerva-gpt"
 BATCH="${BATCH:-8}"
+# The fast path (FlashAttention 3 + packing + Liger) only if pod/speedcheck.py proved on this
+# pod that it changes speed and not results; it writes the flags to ~/fast_flags.
+FAST="$(cat "$HOME/fast_flags" 2>/dev/null || true)"
 step() { echo; echo "== $(date +%H:%M:%S) $*"; }
 {
+  step "training path: ${FAST:-verified sdpa path (no ~/fast_flags)}"
   step "SFT, variant A (my answers only)"
-  uv run python train_sft.py --variant A --batch "$BATCH" --no-checkpointing
+  uv run python train_sft.py --variant A --batch "$BATCH" --no-checkpointing $FAST
   step "SFT, variant B (mine x3 + classmates x1, tagged)"
-  uv run python train_sft.py --variant B --batch "$BATCH" --no-checkpointing
+  uv run python train_sft.py --variant B --batch "$BATCH" --no-checkpointing $FAST
 
   step "voice score: does it tell my real answers from classmates'? (AUC, suggested gate)"
   uv run python voice_score.py --adapter checkpoints/sft-B --variant B --validate val
