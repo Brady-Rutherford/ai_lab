@@ -74,6 +74,8 @@ DISCLOSURE = re.compile(
     r"|disability|culture)|i grew up|growing up in|where i'?m from|i'?m from|back home)\b",
     re.IGNORECASE)
 
+INTRO = re.compile(r"intro|icebreak|getting to know|check.?in", re.IGNORECASE)  # mostly personal details
+
 ME_ID = json.load(open(SRC / "scribe/me.json"))["id"]
 SPLIT = pd.read_csv(SRC / "03_split/split.csv").set_index("class_id")
 RESIDUALS = pd.read_parquet(SRC / "tables/classes.parquet",
@@ -211,6 +213,9 @@ def answer_examples(cid, info, turns, speaker, grades_by_turn, dropped):
             continue
         if not mine and DISCLOSURE.search(t["text"]):
             dropped["personal_disclosure"] += 1
+            continue
+        if not mine and t["segment"] and INTRO.search(t["segment"]):
+            dropped["intro_segment"] += 1
             continue
         ask = " ".join(turns[j]["text"].split()[-ASK_WORDS:])
         between, budget = [], BETWEEN_WORDS

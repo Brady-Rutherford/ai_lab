@@ -17,7 +17,10 @@ scanner can't see them; they are masked as capitalised prefixes of 3+ letters of
 name that are not English words (not before "'t", so "Hasn't" survives). And a capitalised word
 right before a comma or question mark (a vocative: "Shinn, what do you think?") within one edit
 of a roster name is masked too: speech-to-text misspells names, and the CS156 masker only
-fuzzy-matches mid-sentence.
+fuzzy-matches mid-sentence. Names on no roster at all (other spellings, nicknames) are caught
+where speech marks them as people: a rare word (wordfreq Zipf < 2.5) called on at a sentence
+start ("K****?", "N****, why do you think...") or owning a classroom contribution ("Q****'s
+point"). Kept narrow on purpose: a broad rare-word rule also hit authors, places and tools.
 """
 
 import json
@@ -32,6 +35,7 @@ SRC = Path(os.environ.get("CS156_DIR", "~/cs156-ml/pipeline1/data")).expanduser(
 sys.path.insert(0, str(SRC.parent))
 from oncue import config, privacy  # noqa: E402
 from scribe_core.text import levenshtein  # noqa: E402
+from wordfreq import zipf_frequency  # noqa: E402
 
 NAME = "[NAME]"
 # after a sentence end, a line break, or a "Speaker:" label
@@ -80,6 +84,23 @@ def nickname_re():
 
 
 VOCATIVE = re.compile(r"(?<![\w\[])([A-Z][a-z]{3,})(?=[ \t]*[,?])")
+RARE_ZIPF = 2.5
+CALL_ON = re.compile(r"(?<![\w\[])([A-Z][a-z]{2,})(?=[ \t]*\?(?:\s|$)|,[ \t]+(?:what|can|could|do|did|how"
+                     r"|would|will|you|go|any|is|are|thoughts|please|tell|why)\b)")
+PEER = re.compile(r"(?<![\w\[])([A-Z][a-z]{2,})(?=['’]s[ \t]+(?:point|idea|comment|question|answer|group"
+                  r"|argument|example|response|presentation|perspective|take|suggestion|work|thought|view"
+                  r"|team)s?\b)")
+
+
+def is_rare(word):
+    return zipf_frequency(word.lower(), "en") < RARE_ZIPF
+
+
+def unrostered_names(text):
+    """Spans of names on no roster: rare words called on at a sentence start, or owning a point."""
+    spans = [m.span(1) for m in CALL_ON.finditer(text) if is_rare(m.group(1))
+             and SENTENCE_START.search(text[max(0, m.start() - 6):m.start()])]
+    return spans + [m.span(1) for m in PEER.finditer(text) if is_rare(m.group(1))]
 
 
 @lru_cache(maxsize=1)
@@ -154,6 +175,8 @@ def mask_names(text, header=False):
         text = nickname_re().sub(NAME, text)
     if not header:
         text = VOCATIVE.sub(lambda m: NAME if is_misspelled_name(m.group(1)) else m.group(0), text)
+        for start, end in sorted(unrostered_names(text), reverse=True):
+            text = text[:start] + NAME + text[end:]
     if nd.names_cs and not header:
         src = text
         text = nd.names_cs.sub(
