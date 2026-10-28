@@ -12,6 +12,15 @@ set -euo pipefail
 SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
 VLLM_VERSION="${VLLM_VERSION:-0.32.0}"
 
+echo "== NVIDIA driver: uv.lock's torch 2.14 is built for CUDA 13, which needs driver >= 580"
+DRIVER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)"
+if [ -z "$DRIVER" ] || [ "${DRIVER%%.*}" -lt 580 ]; then
+  echo "!! driver '${DRIVER:-none}' is too old (or no GPU): torch could not use this GPU."
+  echo "   Terminate this pod and pick an image with a CUDA 13 driver (>= 580)."
+  exit 1
+fi
+echo "driver $DRIVER ok"
+
 echo "== system packages"
 $SUDO apt-get update -y -qq
 $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tmux rsync curl ca-certificates >/dev/null
@@ -21,8 +30,9 @@ command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 cd "$HOME/minerva-gpt"
 
-echo "== training environment (uv.lock; Python 3.12 as on the Mac)"
-uv sync --frozen --python 3.12 || { echo "frozen sync failed; resolving again"; uv sync --python 3.12; }
+echo "== training environment (uv.lock + the gpu extra: kernels, liger-kernel; Python 3.12)"
+uv sync --frozen --python 3.12 --extra gpu \
+  || { echo "frozen sync failed; resolving again"; uv sync --python 3.12 --extra gpu; }
 
 echo "== vLLM environment, separate ($VLLM_VERSION)"
 [ -x "$HOME/vllm-env/bin/python" ] || uv venv "$HOME/vllm-env" --python 3.12
@@ -31,7 +41,12 @@ uv pip install --python "$HOME/vllm-env/bin/python" "vllm==$VLLM_VERSION"
 echo "== base model into the HF cache, every file size-verified"
 uv run python download_model.py
 
+echo "== FlashAttention 3, prebuilt from the kernels hub (for the fast path; no compiling)"
+HF_HUB_OFFLINE=0 uv run python -c "from kernels import get_kernel; \
+get_kernel('kernels-community/vllm-flash-attn3', version=1); print('FA3 kernel cached')" \
+  || echo "!! no FA3 build for this torch/CUDA: training stays on the verified sdpa path"
+
 echo "== GPU"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 echo "$(nproc) cores, $(free -g | awk '/Mem:/{print $2}') GB RAM, $(df -h ~ | awk 'NR==2{print $4}') disk free"
-echo "done. Next: cd ~/minerva-gpt && uv run python pod/preflight.py"
+echo "done. Next: cd ~/minerva-gpt && uv run python pod/preflight.py && uv run python pod/speedcheck.py"

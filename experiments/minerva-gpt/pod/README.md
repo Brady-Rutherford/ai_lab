@@ -13,7 +13,7 @@ The Mac builds and checks the data; the pod only trains and samples. The pattern
 
 | On the pod | Never on the pod |
 |---|---|
-| this folder's code, the masked SFT data (after `privacy_check.py` passes), the base model (public) | raw CS156 data, the Forum cookie, any `.env`, unmasked text |
+| the code, cloned from GitHub (`ai_lab`, branch `main`); the masked SFT data, sent from the Mac by SSH after `privacy_check.py` passes; the base model (public) | raw CS156 data, the Forum cookie, any `.env`, unmasked text |
 | while running: adapters, samples, the log | anything after `wipe.sh` |
 
 ## Environments
@@ -27,16 +27,27 @@ while training uses torch 2.14 and transformers 5.21.
 
 ## Steps
 
-**0. Rent the pod.**
-- 1x H100 80GB (or A100 80GB), x86-64, an Ubuntu image with CUDA, 100 GB disk, your SSH key.
-- The dashboard shows the SSH command, e.g. `ssh root@203.0.113.7 -p 22`. Below, that address
-  is `HOST` and the port is `PORT`.
+**0. Rent the pod** (Prime Intellect, as for CS156; ~$2.36/h for an H100 in Oct 2026)
 
-**1. Mac: send the code and the data** (~1 min; refuses unless the privacy gate passes)
+| Setting | Choose | Why |
+|---|---|---|
+| GPU | **1x H100 80GB**; an A100 80GB is fine if cheaper | 1B trains in minutes; the same pod fits the 7B later |
+| Provider tier | a **datacenter / secure** provider, not a community or peer host | the masked class data sits on its disk while it runs |
+| CPU | **x86-64** (not the GH200's Arm) | the torch and vLLM CUDA wheels are x86 first |
+| Image | **Ubuntu 22.04 or 24.04 with CUDA 13** (NVIDIA driver >= 580) | uv.lock's torch 2.14 is built for CUDA 13; `setup.sh` stops on an older driver |
+| Disk | **100 GB** | two environments, the model (6 GB), adapters |
+| SSH key | your Mac's public key (`cat ~/.ssh/id_ed25519.pub`) | how push and pull reach it |
+
+The dashboard then shows the SSH command, e.g. `ssh root@203.0.113.7 -p 22`. Below, that
+address is `HOST` and the port is `PORT`.
+
+**1. Mac: code from GitHub, data from the Mac** (~1 min)
 ```
 cd ~/ai_lab/experiments/minerva-gpt
 bash pod/push.sh HOST PORT
 ```
+It refuses if the privacy gate fails, and if this folder differs from GitHub `main` (push and
+merge first, so the pod runs exactly what you see). `CODE=mac` sends this Mac's files instead.
 
 **2. Pod: set up and check** (~10 min)
 ```
@@ -44,6 +55,7 @@ ssh HOST -p PORT
 bash ~/minerva-gpt/pod/setup.sh
 cd ~/minerva-gpt && uv run python pod/preflight.py      # must print "all passed"
 GEN_ENGINE=vllm sh smoke_test.sh                          # whole pipeline on fake data, this GPU
+uv run python pod/speedcheck.py                           # turns the fast path on only if proven (~5 min)
 ```
 
 **3. Pod: session 1** (~30-40 min)
@@ -73,10 +85,22 @@ GATE_A=<from session 1> GATE_B=<from session 1> bash ~/minerva-gpt/pod/run_dpo.s
 ```
 Leave a variant's gate unset if its voice-score AUC check failed. Then step 4 again.
 
-## Optional speedups, verified before use
+## Speedups
 
-- **FlashAttention 2 + packing** (`train_sft.py --attn flash_attention_2 --packing`). Install
-  flash-attn into `.venv`. Before switching, run 20 steps both ways and check that the loss
-  curves match. With plain sdpa, packed examples would attend to each other, so `--packing`
-  refuses without FlashAttention.
-- **Bigger batches**: `BATCH=16 bash pod/run.sh` if memory allows.
+| Speedup | How | On when |
+|---|---|---|
+| vLLM sampling | own environment, same token ids as the training tokenizer | always |
+| bf16, bigger batches, no gradient checkpointing | `run.sh` flags | always (speed only) |
+| **FlashAttention 3** | prebuilt Hopper kernel from the kernels hub (`kernels-community/vllm-flash-attn3`); no compiling | after `speedcheck.py` passes |
+| **Packing** (no padding) | TRL padding-free; FlashAttention's variable-length mode keeps packed examples apart | after `speedcheck.py` passes |
+| **Liger kernels** | fused lm_head + loss: the 100K-word logits are never materialized | after `speedcheck.py` passes |
+
+`speedcheck.py` proves two things on this pod before `run.sh` uses the fast path:
+1. **Isolation.** Each example gives the same log-probs packed behind another as alone. A
+   negative control, the same row without position restarts, must differ. On the Mac, sdpa
+   fails this check (2.50 per token), as it should.
+2. **Equivalence.** One epoch on the same 640 examples, verified path vs fast path: val loss
+   within 2%, and actually faster.
+
+If either fails, `run.sh` stays on the verified sdpa path. `BATCH=16 bash pod/run.sh` trades
+memory for speed.

@@ -18,5 +18,11 @@ dependencies = [
     "python-dotenv",
 ]
 
+[project.optional-dependencies]
+gpu = [
+    "kernels>=0.18.0",
+    "liger-kernel>=0.8.5 ; sys_platform == 'linux'",
+]
+
 [tool.uv]
 package = false

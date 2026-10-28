@@ -37,12 +37,17 @@ def main():
     ap.add_argument("--batch", type=int, default=4, help="per forward pass")
     ap.add_argument("--effective-batch", type=int, default=common.EFFECTIVE_BATCH,
                     help="examples per optimizer step; gradient accumulation makes up the rest")
-    ap.add_argument("--attn", default="sdpa", help="sdpa (any device) or flash_attention_2 (CUDA)")
+    ap.add_argument("--attn", default="sdpa",
+                    help="sdpa (any device), or flash_attention_3 / flash_attention_2 (CUDA; loaded "
+                         "from the kernels hub when flash-attn isn't installed)")
     ap.add_argument("--packing", action="store_true",
                     help="pack examples without padding; only with FlashAttention, which keeps "
                          "packed examples from seeing each other")
     ap.add_argument("--no-checkpointing", action="store_true",
                     help="faster when memory allows (a big GPU); results are the same")
+    ap.add_argument("--liger", action="store_true",
+                    help="Liger kernels: fused lm_head + loss, so the 100K-word logits are never "
+                         "materialized (CUDA, the gpu extra)")
     args = ap.parse_args()
     if args.packing and "flash" not in args.attn:
         ap.error("--packing needs a FlashAttention --attn: with sdpa, packed examples would attend to each other")
@@ -67,6 +72,7 @@ def main():
         max_length=common.MAX_LENGTH,
         gradient_checkpointing=not args.no_checkpointing,
         packing=args.packing,
+        use_liger_kernel=args.liger,
         logging_steps=5,
         eval_strategy="steps",
         eval_steps=50,
