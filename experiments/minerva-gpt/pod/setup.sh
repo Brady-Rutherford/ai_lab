@@ -12,6 +12,15 @@ set -euo pipefail
 SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="sudo"
 VLLM_VERSION="${VLLM_VERSION:-0.32.0}"
 
+echo "== NVIDIA driver: uv.lock's torch 2.14 is built for CUDA 13, which needs driver >= 580"
+DRIVER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)"
+if [ -z "$DRIVER" ] || [ "${DRIVER%%.*}" -lt 580 ]; then
+  echo "!! driver '${DRIVER:-none}' is too old (or no GPU): torch could not use this GPU."
+  echo "   Terminate this pod and pick an image with a CUDA 13 driver (>= 580)."
+  exit 1
+fi
+echo "driver $DRIVER ok"
+
 echo "== system packages"
 $SUDO apt-get update -y -qq
 $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tmux rsync curl ca-certificates >/dev/null
