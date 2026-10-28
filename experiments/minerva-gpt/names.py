@@ -1,7 +1,8 @@
 """Every Minerva name I have, for masking text and for checking that the masking worked.
 
 Built from the CS156 privacy scanner's own needles (`oncue.privacy`): every roster in
-scribe/raw, my own names excluded. prepare_data.py masks with it and privacy_check.py gates
+scribe/raw, plus the staff who graded my work (outcome_assessments.json grader-user), whom the
+rosters don't list; my own names excluded. prepare_data.py masks with it and privacy_check.py gates
 with it, so the two can never disagree about what counts as a name.
 
 Each class's RosterMasker only knows that class's roster, so it misses classmates from other
@@ -56,15 +57,27 @@ EDGE = ".,!?;:\"'()[]“”‘’"
 
 
 @lru_cache(maxsize=1)
+def people():
+    """Every name I have: the class rosters (CS156's load_roster, mine left out) plus graders."""
+    names = list(privacy.load_roster(config.RAW_DIR))
+    for path in sorted(config.RAW_DIR.glob("*/outcome_assessments.json")):
+        for a in json.load(open(path)) or []:
+            g = a.get("grader-user") or {}
+            person = " ".join(x for x in (g.get("first-name"), g.get("last-name")) if x)
+            if person:
+                names.append(person)
+    return names
+
+
+@lru_cache(maxsize=1)
 def needles():
     config.load_env()  # the ID salt, so salted ids are checked too
     try:
         salt = config.id_salt()
     except RuntimeError:
         salt = None
-    roster = privacy.load_roster(config.RAW_DIR)
     ids = privacy.load_hashed_ids(config.TABLES_DIR)
-    return privacy._needles(roster, ids, salt=salt, extra_terms=[],
+    return privacy._needles(people(), ids, salt=salt, extra_terms=[],
                             exclude=list(config.BRADY_VARIANTS), allow=[])
 
 
@@ -74,7 +87,7 @@ def nickname_re():
     words, not themselves full names (those are in needles()), and not prefixes of mine."""
     common = privacy._common_words()
     mine = {v.lower() for v in config.BRADY_VARIANTS}
-    names = {t.lower() for t in privacy.roster_terms(privacy.load_roster(config.RAW_DIR))
+    names = {t.lower() for t in privacy.roster_terms(people())
              if " " not in t and t.isalpha()}
     prefixes = {n[:k] for n in names - mine for k in range(3, len(n))}
     prefixes = {p for p in prefixes if p not in common and p not in names
@@ -107,7 +120,7 @@ def unrostered_names(text):
 def _names_by_length():
     common = privacy._common_words()
     by_len = {}
-    for t in privacy.roster_terms(privacy.load_roster(config.RAW_DIR)):
+    for t in privacy.roster_terms(people()):
         low = t.lower()
         if " " not in t and low.isalpha() and len(low) >= config.MASK_LEV_MIN_LEN and low not in common:
             by_len.setdefault(len(low), set()).add(low)
@@ -136,7 +149,7 @@ def name_like():
     mid-sentence at least 3 times and at least as often as in lower case."""
     common = privacy._common_words()
     mine = {v.lower() for v in config.BRADY_VARIANTS}
-    candidates = {t.lower() for t in privacy.roster_terms(privacy.load_roster(config.RAW_DIR))
+    candidates = {t.lower() for t in privacy.roster_terms(people())
                   if " " not in t and t.lower() in common and t.lower() not in mine}
     lower, capital = Counter(), Counter()
     for path in SRC.glob("transcripts/*/*_ids.jsonl"):
