@@ -13,11 +13,18 @@ JOB.json: {"adapter", "prompts": [[token ids]...], "n", "temperature", "top_p",
 """
 
 import json
+import os
 import sys
 
-from vllm import LLM, SamplingParams
-from vllm.inputs import TokensPrompt
-from vllm.lora.request import LoRARequest
+# vLLM's FlashInfer sampler JIT-compiles its top-k/top-p kernel on first use, which needs ninja
+# and a CUDA toolkit matching vLLM's torch (13; Lambda images ship nvcc 12.8). PyTorch's
+# sampler is the reference implementation of the same sampling, with nothing to compile; for a
+# 1B model sampling is a sliver of the time.
+os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+
+from vllm import LLM, SamplingParams  # noqa: E402
+from vllm.inputs import TokensPrompt  # noqa: E402
+from vllm.lora.request import LoRARequest  # noqa: E402
 
 import common  # standard library only; sets HF offline mode, so the model loads from the cache
 
