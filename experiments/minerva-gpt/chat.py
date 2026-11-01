@@ -1,6 +1,6 @@
 """Ask what a professor would ask; the model answers the way I would in class.
 
-    uv run --extra mac python chat.py                    # 8-bit copy of model A, with MLX
+    uv run --extra mac python chat.py                    # 8-bit copy of model B (SFT + DPO), with MLX
     uv run --extra mac python chat.py --class climate    # start in a class (see below)
     uv run python chat.py --full                         # full bf16 model, transformers (needs a GPU
                                                          # with ~16 GB free: the reference, not for the Mac)
@@ -104,7 +104,7 @@ def hf_engine(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", default="A", choices=["A", "B"])
+    ap.add_argument("--variant", default="B", choices=["A", "B"])
     ap.add_argument("--full", action="store_true", help="the full bf16 model with transformers")
     ap.add_argument("--model", help="a repo id or local folder instead of the default")
     ap.add_argument("--class", dest="klass", metavar="WORDS", help="start in this class")
