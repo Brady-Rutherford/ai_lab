@@ -85,6 +85,30 @@ GATE_A=<from session 1> GATE_B=<from session 1> bash ~/minerva-gpt/pod/run_dpo.s
 ```
 Leave a variant's gate unset if its voice-score AUC check failed. Then step 4 again.
 
+## Session 2: class context + SPIN, then 7B
+
+After session 1 showed the models had the voice but generic content, every prompt now
+carries the class context (readings and instructions, my pre-class work, the poll on screen).
+DPO uses SPIN pairs instead of rankings: my real answer beats the model's answer to the same
+train ask.
+```
+bash pod/push.sh HOST PORT                 # BRANCH=<branch> to run code that isn't on main yet
+ssh HOST 'bash ~/minerva-gpt/pod/setup.sh' # a fresh pod; preflight as in step 2
+tmux new -s minerva
+bash ~/minerva-gpt/pod/run_v2.sh           # VARIANTS="A" for one variant, SKIP_7B=1 to stop after 1B
+```
+
+Per variant, `run_v2.sh` does:
+1. SFT with context, keeping the checkpoint with the best val loss.
+2. Answers to train asks and to never-seen asks; `eval_memorization.py` on both.
+3. DPO on the SPIN pairs, then `merge_model.py`.
+4. The memorization check again.
+5. Answers to rank and blind-test.
+
+**1B runs first, then 7B.** OLMo 3 7B (`allenai/Olmo-3-1025-7B`) starts only if the 1B
+memorization and regurgitation checks pass, and only after vLLM shows it can serve it. 1B and
+7B keep separate folders (`checkpoints/1b|7b`, `data/generations/1b|7b`).
+
 ## Speedups
 
 | Speedup | How | On when |

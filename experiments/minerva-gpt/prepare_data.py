@@ -26,6 +26,11 @@ Writes (under --out, default data/, gitignored):
                                             for the tokenizer study and bits-per-byte evals
     stats.json
 
+Every prompt also carries what I knew going in (the class context): the readings and
+pre-class instructions, my own pre-class work answers for that class, and the poll on screen
+when I spoke. My pre-class answer being predicted is never in its own context, and classmates'
+prompts never carry my pre-class work.
+
 Each row: {"prompt": [user message], "completion": [assistant message], "source", "speaker",
 "class_id", "los", "grade", "grade_z"}. `grade` is the mean professor score on that answer
 (polls and spoken turns only); `grade_z` normalizes it per grader, since some grade harder.
@@ -40,11 +45,13 @@ Classes with written work but no transcript have no split; they go to train.
 import argparse
 import bisect
 import json
+import math
 import os
 import re
 import statistics
 import sys
 from collections import Counter, defaultdict
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -65,6 +72,11 @@ ASK_WORDS = 150         # keep the end of the professor's turn, where the questi
 BETWEEN_WORDS = 200     # replies between the ask and the answer, newest kept
 MAX_ANSWER_WORDS = 1200
 MAX_LOS = 6             # focused LOs/HCs listed in a prompt
+PREP_WORDS = 200        # readings and pre-class instructions, per class
+MY_PCW_WORDS = 300      # my pre-class answers, per class
+POLL_OPEN_S = 300       # a poll with no close time counts as open this long
+POLL_AFTER_S = 600      # ...and stays "on screen" through its debrief, this long after closing
+PLACEHOLDER = re.compile(r"^\s*this student was present, but did not complete the poll", re.IGNORECASE)
 MATCH_SLACK_S = 3.0     # a graded voice event may sit this far outside my utterance times
 MIN_GRADER_STD = 0.5    # floor for per-grader spread, so one-grade graders don't explode
 DISCLOSURE = re.compile(
@@ -98,8 +110,72 @@ def focused_los(cid):
     return list(seen.items())[:MAX_LOS]
 
 
+@lru_cache(maxsize=1)
+def pcw_table():
+    pcw = pd.read_parquet(SRC / "tables/pcw_blocks.parquet")
+    return pcw[(pcw.answer_words >= 5) & (pcw.answer_words <= MAX_ANSWER_WORDS)
+               & (pcw.prompt_text.str.len() > 20)]
+
+
+@lru_cache(maxsize=1)
+def poll_table():
+    return pd.read_parquet(SRC / "tables/polls.parquet")
+
+
+def html_text(x):
+    return " ".join(re.sub(r"<[^>]+>", " ", str(x or "")).split())
+
+
+def clip(text, words):
+    w = text.split()
+    return " ".join(w[:words]) + (" …" if len(w) > words else "")
+
+
+def class_context(cid):
+    """The readings and instructions, my pre-class answers (block, short question, answer), and
+    the timed polls of one class, unmasked: context() masks the text it assembles, as a whole,
+    so the masker sees exactly the text privacy_check.py checks."""
+    page = raw(cid, "class_edit_page") or {}
+    prep = html_text((page.get("preparatory-assignment") or {}).get("description"))
+    blocks = pcw_table()[pcw_table().class_id == cid].sort_values("block_order")
+    pcw = [(b.block_uuid, clip(html_text(b.prompt_text), 12), html_text(b.answer_text))
+           for b in blocks.itertuples()]
+    polls = poll_table()
+    timed = polls[(polls.class_id == cid) & polls.open_s.notna()].sort_values("open_s")
+    return {"prep": clip(prep, PREP_WORDS) if len(prep.split()) > 10 else "", "pcw": pcw,
+            "polls": [(p.open_s, p.close_s, html_text(p.prompt_masked)) for p in timed.itertuples()],
+            "_context_cache": {}}
+
+
+def context(info, my_pcw=True, skip_block=None, at=None):
+    """What I knew going in. `my_pcw` False for classmates' examples; `skip_block` leaves out
+    the pre-class answer being predicted; `at` (class seconds) adds the poll on screen."""
+    on = []
+    if at is not None:
+        on = [i for i, (o, c, p) in enumerate(info["polls"]) if p and o <= at
+              <= (o + POLL_OPEN_S if c is None or math.isnan(c) else c) + POLL_AFTER_S]
+    key = (my_pcw, skip_block, on[-1] if on else None)
+    if key in info["_context_cache"]:
+        return info["_context_cache"][key]
+    parts = []
+    if info["prep"]:
+        parts.append(f"Readings and pre-class instructions: {info['prep']}")
+    if my_pcw:
+        answers = [f"({q}) {a}" for block, q, a in info["pcw"] if block != skip_block and a]
+        if answers:
+            parts.append("My pre-class work: " + clip(" ".join(answers), MY_PCW_WORDS))
+    if on:
+        parts.append(f"On screen (poll): {info['polls'][on[-1]][2]}")
+    info["_context_cache"][key] = mask(info["masker"], "\n".join(parts))
+    return info["_context_cache"][key]
+
+
+def with_context(head, ctx, body):
+    return "\n\n".join(x for x in (head, ctx, body) if x)
+
+
 def class_info(cid):
-    """Course, session title, name masker and focused LOs/HCs for one class."""
+    """Course, session title, name masker, focused LOs/HCs and class context for one class."""
     klass = kebab(raw(cid, "class") or {})
     roster = roster_from_class(klass, ME_ID)
     if cid in SPLIT.index:
@@ -110,8 +186,9 @@ def class_info(cid):
         course = " ".join(str(c.get(k)) for k in ("code", "title") if c.get(k)) or "Unknown course"
         title = klass.get("title") or f"class {cid}"
     title = mask_names(str(title), header=True)
+    masker = RosterMasker(roster.names, roster.me_names)
     return {"course": course, "title": title, "los": focused_los(cid), "klass": klass,
-            "masker": RosterMasker(roster.names, roster.me_names)}
+            "masker": masker, **class_context(cid)}
 
 
 def mask(masker, text, header=False):
@@ -224,8 +301,9 @@ def answer_examples(cid, info, turns, speaker, grades_by_turn, dropped):
             if budget < 0:
                 break
             between.insert(0, f"{c['who']}: {c['text']}")
-        user = "\n".join([header(tag, "Class discussion", info, t["segment"]), "",
-                          f"Professor: {ask}", *between, "", "What do you say?"])
+        body = "\n".join([f"Professor: {ask}", *between, "", "What do you say?"])
+        ctx = context(info, my_pcw=mine, at=t["start"])
+        user = with_context(header(tag, "Class discussion", info, t["segment"]), ctx, body)
         yield example(user, t["text"], "class_turn", speaker, cid, info, grades_by_turn.get(i, ()))
 
 
@@ -340,22 +418,23 @@ def main():
             classmates[split].extend(answer_examples(cid, ci, turns, "classmate", {}, counts))
     keep = set(info) if args.limit else None  # a smoke test only touches the classes it read
 
-    pcw = pd.read_parquet(SRC / "tables/pcw_blocks.parquet")
-    pcw = pcw[(pcw.answer_words >= 5) & (pcw.answer_words <= MAX_ANSWER_WORDS)
-              & (pcw.prompt_text.str.len() > 20)]
-    for r in pcw.itertuples():
+    for r in pcw_table().itertuples():
         if keep is not None and r.class_id not in keep:
             continue
         ci = info_for(r.class_id)
-        user = f"{header(TAG_ME, 'Pre-class work', ci)}\n\n{mask(ci['masker'], r.prompt_text)}"
+        user = with_context(header(TAG_ME, "Pre-class work", ci),
+                            context(ci, skip_block=r.block_uuid), mask(ci["masker"], r.prompt_text))
         mine[split_of(r.class_id)].append(
             example(user, mask(ci["masker"], r.answer_text), "pcw", "brady", r.class_id, ci))
 
-    polls = pd.read_parquet(SRC / "tables/polls.parquet")
+    polls = poll_table()
     for r in polls[polls.my_answer_text.notna()].itertuples():
         if keep is not None and r.class_id not in keep:
             continue
         if not 3 <= len(r.my_answer_text.split()) <= MAX_ANSWER_WORDS:
+            continue
+        if PLACEHOLDER.match(r.my_answer_text):  # Forum's text, not mine
+            counts["poll_placeholder"] += 1
             continue
         ci = info_for(r.class_id)
         if r.class_id not in poll_keys:
@@ -363,7 +442,8 @@ def main():
                                               ci["masker"])
         grades = poll_keys[r.class_id].get(text_key(r.my_answer_text), [])
         counts["poll_graded" if grades else "poll_ungraded"] += 1
-        user = f"{header(TAG_ME, 'In-class poll', ci)}\n\n{mask(ci['masker'], r.prompt_masked)}"
+        user = with_context(header(TAG_ME, "In-class poll", ci), context(ci),
+                            mask(ci["masker"], r.prompt_masked))
         mine[split_of(r.class_id)].append(
             example(user, mask(ci["masker"], r.my_answer_text), "poll", "brady", r.class_id, ci, grades))
 

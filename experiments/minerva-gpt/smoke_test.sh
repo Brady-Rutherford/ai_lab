@@ -43,6 +43,17 @@ echo
 kill $server
 echo "== rankings saved: $(wc -l < "$SY/rankings.jsonl")"
 
+# session-2 pieces: SPIN pairs, merging, memorization
+run generate.py --adapter "$SY/sft-A" --variant A --data "$SY" --split train --source all --n 1 --limit 4 --engine "$ENGINE" --out "$SY/gen-A-train.jsonl"
+run generate.py --adapter "$SY/sft-A" --variant A --data "$SY" --split val --source all --n 1 --limit 4 --engine "$ENGINE" --out "$SY/gen-A-val-plain.jsonl"
+run eval_memorization.py "$SY/gen-A-train.jsonl" "$SY/gen-A-val-plain.jsonl" \
+  || echo "   (a fail is possible here: the fake data repeats the same few sentences)"
+# SPIN with the barely trained B: A reproduces the fake template exactly, which leaves no pairs
+run generate.py --adapter "$SY/sft-B" --variant B --data "$SY" --split train --source all --n 1 --limit 4 --engine "$ENGINE" --out "$SY/gen-B-train.jsonl"
+run train_dpo.py --variant B --spin "$SY/gen-B-train.jsonl" --sft "$SY/sft-B" --out "$SY/dpo-spin-B" --max-steps 2
+run merge_model.py "$SY/sft-B" "$SY/dpo-spin-B" --out "$SY/final-A"
+run generate.py --adapter "$SY/final-A" --variant A --data "$SY" --n 1 --limit 2 --engine "$ENGINE" --out "$SY/gen-final.jsonl"
+
 run train_dpo.py --variant B --rankings "$SY/rankings.jsonl" --auto "$SY/gen-B.voice.grade.jsonl" \
   --sft "$SY/sft-B" --out "$SY/dpo-B" --grade-model "$SY/grade.pkl" --max-steps 2
 echo "== smoke test passed: $SY"

@@ -45,6 +45,7 @@ def main():
                          "packed examples from seeing each other")
     ap.add_argument("--no-checkpointing", action="store_true",
                     help="faster when memory allows (a big GPU); results are the same")
+    ap.add_argument("--lr", type=float, default=common.LEARNING_RATE)
     ap.add_argument("--liger", action="store_true",
                     help="Liger kernels: fused lm_head + loss, so the 100K-word logits are never "
                          "materialized (CUDA, the gpu extra)")
@@ -66,7 +67,7 @@ def main():
         per_device_train_batch_size=args.batch,
         per_device_eval_batch_size=args.batch,
         gradient_accumulation_steps=max(1, args.effective_batch // args.batch),
-        learning_rate=common.LEARNING_RATE,
+        learning_rate=args.lr,
         lr_scheduler_type="cosine",
         warmup_steps=0.03,
         max_length=common.MAX_LENGTH,
@@ -79,6 +80,11 @@ def main():
         save_strategy="steps",
         save_steps=50,
         save_total_limit=2,
+        # keep the checkpoint with the best validation loss, not the last one: if training starts
+        # memorizing my answers, val loss turns up while train loss keeps falling
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
         include_num_input_tokens_seen="non_padding",
         report_to="none",  # no wandb: logged samples would carry class text
         seed=0,
