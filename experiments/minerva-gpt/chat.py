@@ -70,13 +70,13 @@ def local(repo):
         return snapshot_download(repo)
 
 
-def mlx_engine(path):
+def mlx_engine(path, temperature):
     from mlx_lm import load, stream_generate
     from mlx_lm.sample_utils import make_sampler
 
     model, tok = load(path)
     hf = tok._tokenizer  # the plain HF tokenizer: the exact token ids training used
-    sampler = make_sampler(temp=SAMPLING["temperature"], top_p=SAMPLING["top_p"])
+    sampler = make_sampler(temp=temperature, top_p=SAMPLING["top_p"])
 
     def answer(messages):
         text = hf.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -87,7 +87,7 @@ def mlx_engine(path):
     return answer
 
 
-def hf_engine(path):
+def hf_engine(path, temperature):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
 
@@ -98,7 +98,8 @@ def hf_engine(path):
     def answer(messages):
         text = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         ids = tok(text, add_special_tokens=False, return_tensors="pt").input_ids.to(model.device)
-        model.generate(ids, streamer=streamer, eos_token_id=tok.eos_token_id, **SAMPLING)
+        model.generate(ids, streamer=streamer, eos_token_id=tok.eos_token_id,
+                       **{**SAMPLING, "temperature": temperature})
     return answer
 
 
@@ -108,9 +109,11 @@ def main():
     ap.add_argument("--full", action="store_true", help="the full bf16 model with transformers")
     ap.add_argument("--model", help="a repo id or local folder instead of the default")
     ap.add_argument("--class", dest="klass", metavar="WORDS", help="start in this class")
+    ap.add_argument("--temperature", type=float, default=SAMPLING["temperature"],
+                    help="higher = more varied, lower = more of my most common habits")
     args = ap.parse_args()
     repo = args.model or REPO.format(variant=args.variant) + ("" if args.full else "-mlx-8bit")
-    answer = (hf_engine if args.full else mlx_engine)(local(repo))
+    answer = (hf_engine if args.full else mlx_engine)(local(repo), args.temperature)
     known, matches, klass = classes(), [], None
 
     def pick(words):
