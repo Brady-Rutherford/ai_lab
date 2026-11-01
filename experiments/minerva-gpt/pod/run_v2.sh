@@ -10,19 +10,25 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 cd "$HOME/minerva-gpt"
 VARIANTS="${VARIANTS:-A B}"
+# Sized for an H200 (141 GB). The effective batch stays 32 (gradient accumulation makes up
+# the rest), so bigger per-pass batches and no gradient checkpointing change speed, not
+# results. On an 80 GB H100: BATCH_1B=8 BATCH_7B=2.
+BATCH_1B="${BATCH_1B:-16}"
+BATCH_7B="${BATCH_7B:-4}"
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"  # less fragmentation with ragged batches
 BIG="allenai/Olmo-3-1025-7B"
 FAILED=""
 step() { echo; echo "== $(date +%H:%M:%S) $*"; }
 
-# label, base model, SFT lr, DPO lr, extra SFT flags
+# label, base model, SFT lr, DPO lr, batch per pass, extra SFT flags
 one_model() {
-  local label=$1 base=$2 sft_lr=$3 dpo_lr=$4 sft_flags=$5
+  local label=$1 base=$2 sft_lr=$3 dpo_lr=$4 batch=$5 sft_flags=$6
   export MINERVA_BASE_MODEL="$base" MINERVA_CHECKPOINTS="checkpoints/$label"
   local C="$MINERVA_CHECKPOINTS" G="data/generations/$label"
   mkdir -p "$G"
   for v in $VARIANTS; do
     step "[$label] SFT $v with class context"
-    uv run python train_sft.py --variant "$v" --lr "$sft_lr" --batch 8 $sft_flags
+    uv run python train_sft.py --variant "$v" --lr "$sft_lr" --batch "$batch" $sft_flags
     if [ "$v" = B ]; then
       step "[$label] B: does the voice score tell my real answers from classmates'?"
       uv run python voice_score.py --adapter "$C/sft-B" --variant B --validate val
@@ -47,7 +53,7 @@ one_model() {
 }
 
 {
-  one_model 1b "allenai/OLMo-2-0425-1B" 2e-4 5e-5 "--no-checkpointing"
+  one_model 1b "allenai/OLMo-2-0425-1B" 2e-4 5e-5 "$BATCH_1B" "--no-checkpointing"
   if [ -n "$FAILED" ]; then
     step "1B checks failed:$FAILED. Stopping before 7B; look at the log first."
   elif [ -n "${SKIP_7B:-}" ]; then
@@ -57,8 +63,8 @@ one_model() {
     uv run python download_model.py "$BIG"
     MINERVA_BASE_MODEL="$BIG" "$HOME/vllm-env/bin/python" -c \
       "import common; from vllm import LLM; LLM(common.BASE_MODEL, max_model_len=2048).generate('Hello'); print('vLLM serves', common.BASE_MODEL)"
-    # 7B: a lower learning rate, and gradient checkpointing kept on for memory headroom
-    one_model 7b "$BIG" 1e-4 2.5e-5 ""
+    # 7B: a lower learning rate; the H200 has the memory to skip gradient checkpointing
+    one_model 7b "$BIG" 1e-4 2.5e-5 "$BATCH_7B" "--no-checkpointing"
     [ -n "$FAILED" ] && step "7B checks failed:$FAILED"
   fi
   step "session 2 done. On the Mac: bash pod/pull.sh HOST PORT"

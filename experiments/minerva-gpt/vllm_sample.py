@@ -32,8 +32,15 @@ import common  # standard library only; sets HF offline mode, so the model loads
 def main(job_path, out_path):
     job = json.load(open(job_path))
     merged = common.is_merged(job["adapter"])  # SFT + DPO folded in: vLLM can't stack adapters
+    # Throughput settings, none of which change what is sampled: most of the GPU for the KV
+    # cache, more sequences in flight, bigger prefill batches, and prefix caching, since many
+    # asks from one class share its long context block.
     llm = LLM(job["adapter"] if merged else common.BASE_MODEL, dtype="bfloat16", enable_lora=not merged,
-              max_lora_rank=common.LORA["r"], max_model_len=4096, seed=0)
+              max_lora_rank=common.LORA["r"], max_model_len=4096, seed=0,
+              gpu_memory_utilization=float(os.environ.get("VLLM_GPU_UTIL", "0.92")),
+              max_num_seqs=int(os.environ.get("VLLM_MAX_SEQS", "512")),
+              max_num_batched_tokens=int(os.environ.get("VLLM_BATCHED_TOKENS", "16384")),
+              enable_prefix_caching=True)
     params = SamplingParams(n=job["n"], temperature=job["temperature"], top_p=job["top_p"],
                             max_tokens=job["max_new_tokens"], stop_token_ids=[job["eos_token_id"]],
                             seed=0)
