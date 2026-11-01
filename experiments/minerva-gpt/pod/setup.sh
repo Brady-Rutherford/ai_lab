@@ -38,8 +38,10 @@ echo "== vLLM environment, separate ($VLLM_VERSION)"
 [ -x "$HOME/vllm-env/bin/python" ] || uv venv "$HOME/vllm-env" --python 3.12
 uv pip install --python "$HOME/vllm-env/bin/python" "vllm==$VLLM_VERSION"
 
-echo "== base model into the HF cache, every file size-verified"
+echo "== models into the HF cache, every file size-verified: the base model, and the small"
+echo "   embedder that retrieval and the grade model use"
 uv run python download_model.py
+uv run python download_model.py BAAI/bge-small-en-v1.5
 
 echo "== FlashAttention 3, prebuilt from the kernels hub (for the fast path; no compiling)"
 HF_HUB_OFFLINE=0 uv run python -c "from kernels import get_kernel; \

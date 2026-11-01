@@ -14,18 +14,23 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 ROOT = Path(__file__).parent
-DATA = ROOT / "data"                # gitignored: everything derived from class recordings
-CHECKPOINTS = ROOT / "checkpoints"  # gitignored: adapters can regurgitate training text
+DATA = ROOT / "data"  # gitignored: everything derived from class recordings
+# gitignored: adapters can regurgitate training text. One folder per base model, e.g.
+# MINERVA_CHECKPOINTS=checkpoints/7b, so a 7B run never overwrites the 1B adapters.
+CHECKPOINTS = ROOT / os.environ.get("MINERVA_CHECKPOINTS", "checkpoints")
 
-BASE_MODEL = "allenai/OLMo-2-0425-1B"
+# MINERVA_BASE_MODEL=allenai/Olmo-3-1025-7B for the 7B run; every script, vLLM's included,
+# reads it from here.
+BASE_MODEL = os.environ.get("MINERVA_BASE_MODEL", "allenai/OLMo-2-0425-1B")
 ME = "Brady"
 TAG_ME = "Answer as: Brady"
 TAG_CLASSMATE = "Answer as: a classmate"
 
-# OLMo 2's base tokenizer ships without a chat template. This is the one OLMo 2's own
-# instruct models use (allenai/OLMo-2-0425-1B-SFT); its role markers are plain text.
+# OLMo's base tokenizers ship without a chat template. This is the one OLMo 2's own instruct
+# models use (allenai/OLMo-2-0425-1B-SFT); its role markers are plain text. The bos guard is ours:
+# OLMo 3's tokenizer has no bos token, which would otherwise render as the text "None".
 CHAT_TEMPLATE = (
-    "{{ bos_token }}{% for message in messages %}"
+    "{% if bos_token %}{{ bos_token }}{% endif %}{% for message in messages %}"
     "{% if message['role'] == 'system' %}{{ '<|system|>\n' + message['content'] + '\n' }}"
     "{% elif message['role'] == 'user' %}{{ '<|user|>\n' + message['content'] + '\n' }}"
     "{% elif message['role'] == 'assistant' %}{% if not loop.last %}"
@@ -86,6 +91,12 @@ def device():
     if torch.backends.mps.is_available():
         return "mps"
     return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def is_merged(path):
+    """A full model folder (merge_model.py) rather than a LoRA adapter."""
+    path = Path(path)
+    return (path / "config.json").exists() and not (path / "adapter_config.json").exists()
 
 
 def load_model(*adapters, merge_last=False, name=BASE_MODEL, attn=None):

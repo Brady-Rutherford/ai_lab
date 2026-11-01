@@ -1,10 +1,16 @@
 """DPO on top of the SFT adapter: "your voice decides, grades refine, retrieval informs".
 
+    uv run python train_dpo.py --variant A --spin data/generations/A-train.jsonl
     uv run python train_dpo.py --variant B --rankings data/rankings.jsonl
     uv run python train_dpo.py --variant B --rankings data/rankings.jsonl \
         --auto data/generations/B-val.voice.grade.jsonl --voice-gate 0.5
 
 Pairs, as (prompt, chosen, rejected):
+- SPIN (self-play fine-tuning, 2024), from generations on train asks: what I really said beats what the
+  SFT model said to the same ask. No labeling needed, and it pushes toward my actual
+  reasoning rather than between near-identical samples. Answers under 15 words (often
+  transcription fragments) are skipped. These are answers SFT already trained on, so check
+  eval_memorization.py afterwards.
 - gold, from my rankings (rank_server.py). My pick beats every answer I marked "not my voice"
   and every other answer I marked as my voice. Between two non-picked answers that both sound
   like me, the one the grade model scores higher wins. Voice is a hard gate: an answer I marked
@@ -31,6 +37,7 @@ from reward_model import MODEL_PATH, GradeModel
 from retrieve import ask_text
 
 GOLD_REPEATS = 3
+SPIN_MIN_WORDS = 15
 
 
 def answer(text):
@@ -68,34 +75,52 @@ def auto_pairs(rows, voice_gate):
     return pairs
 
 
+def spin_pairs(rows):
+    """My real answer (chosen) vs the model's first sample (rejected), per train ask."""
+    pairs = []
+    for r in rows:
+        real, model = r["real"], r["samples"][0]
+        if len(real.split()) >= SPIN_MIN_WORDS and model.strip() and model.strip() != real.strip():
+            pairs.append((r["prompt"], real, model))
+    return pairs
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--variant", choices=["A", "B"], required=True)
-    ap.add_argument("--rankings", type=Path, required=True)
+    ap.add_argument("--rankings", type=Path, help="my picks from rank_server.py")
+    ap.add_argument("--spin", type=Path, help="generations on train asks, for SPIN pairs")
     ap.add_argument("--auto", type=Path, help="generations with voice and grade_pred scores")
     ap.add_argument("--voice-gate", type=float, default=0.0)
     ap.add_argument("--sft", type=Path, help="default checkpoints/sft-{variant}")
     ap.add_argument("--out", type=Path)
     ap.add_argument("--beta", type=float, default=0.1)
+    ap.add_argument("--lr", type=float, default=5e-5, help="~10x a full-fine-tuning DPO rate")
     ap.add_argument("--max-steps", type=int, default=-1)
     ap.add_argument("--grade-model", type=Path, default=MODEL_PATH)
     args = ap.parse_args()
+    if not (args.rankings or args.spin):
+        ap.error("give --rankings, --spin, or both")
     sft = args.sft or common.CHECKPOINTS / f"sft-{args.variant}"
     out = args.out or common.CHECKPOINTS / f"dpo-{args.variant}"
 
     grade_model = GradeModel.load(args.grade_model) if args.grade_model.exists() else None
-    gold = gold_pairs(common.read_jsonl(args.rankings), grade_model)
+    gold = gold_pairs(common.read_jsonl(args.rankings), grade_model) if args.rankings else []
     auto = auto_pairs(common.read_jsonl(args.auto), args.voice_gate) if args.auto else []
-    pairs = gold * GOLD_REPEATS + auto
-    print(f"{len(gold)} gold pairs (x{GOLD_REPEATS}) + {len(auto)} automatic pairs"
-          + ("" if grade_model else " (no grade model: gold pairs only use my picks)"))
+    spin = spin_pairs(common.read_jsonl(args.spin)) if args.spin else []
+    pairs = gold * GOLD_REPEATS + auto + spin
+    if not pairs:
+        raise SystemExit("no DPO pairs: no rankings, or every SPIN sample already equals my real "
+                         "answer (the model has memorized them; see eval_memorization.py)")
+    print(f"{len(gold)} gold pairs (x{GOLD_REPEATS}) + {len(auto)} automatic + {len(spin)} SPIN pairs"
+          + ("" if grade_model or not gold else " (no grade model: gold pairs only use my picks)"))
     train = Dataset.from_list([{"prompt": p, "chosen": answer(c), "rejected": answer(r)}
                                for p, c, r in pairs]).shuffle(seed=0)
 
     config = DPOConfig(
         output_dir=str(out),
         beta=args.beta,
-        learning_rate=5e-5,  # ~10x a full-fine-tuning DPO rate, as for SFT
+        learning_rate=args.lr,
         lr_scheduler_type="cosine",
         warmup_steps=0.05,
         num_train_epochs=1,

@@ -13,23 +13,31 @@ JOB.json: {"adapter", "prompts": [[token ids]...], "n", "temperature", "top_p",
 """
 
 import json
+import os
 import sys
 
-from vllm import LLM, SamplingParams
-from vllm.inputs import TokensPrompt
-from vllm.lora.request import LoRARequest
+# vLLM's FlashInfer sampler JIT-compiles its top-k/top-p kernel on first use, which needs ninja
+# and a CUDA toolkit matching vLLM's torch (13; Lambda images ship nvcc 12.8). PyTorch's
+# sampler is the reference implementation of the same sampling, with nothing to compile; for a
+# 1B model sampling is a sliver of the time.
+os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
+
+from vllm import LLM, SamplingParams  # noqa: E402
+from vllm.inputs import TokensPrompt  # noqa: E402
+from vllm.lora.request import LoRARequest  # noqa: E402
 
 import common  # standard library only; sets HF offline mode, so the model loads from the cache
 
 
 def main(job_path, out_path):
     job = json.load(open(job_path))
-    llm = LLM(common.BASE_MODEL, dtype="bfloat16", enable_lora=True,
+    merged = common.is_merged(job["adapter"])  # SFT + DPO folded in: vLLM can't stack adapters
+    llm = LLM(job["adapter"] if merged else common.BASE_MODEL, dtype="bfloat16", enable_lora=not merged,
               max_lora_rank=common.LORA["r"], max_model_len=4096, seed=0)
     params = SamplingParams(n=job["n"], temperature=job["temperature"], top_p=job["top_p"],
                             max_tokens=job["max_new_tokens"], stop_token_ids=[job["eos_token_id"]],
                             seed=0)
-    lora = LoRARequest("adapter", 1, job["adapter"])
+    lora = None if merged else LoRARequest("adapter", 1, job["adapter"])
     outputs = llm.generate([TokensPrompt(prompt_token_ids=ids) for ids in job["prompts"]],
                            params, lora_request=lora)
     json.dump([[c.text.strip() for c in o.outputs] for o in outputs], open(out_path, "w"))

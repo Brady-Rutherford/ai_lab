@@ -70,7 +70,7 @@ def sample_vllm(adapter, tok, prompts, n):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", type=Path, required=True)
+    ap.add_argument("--adapter", type=Path, required=True, help="a LoRA adapter or a merged model")
     ap.add_argument("--variant", choices=["A", "B"], required=True)
     ap.add_argument("--data", type=Path, default=common.DATA)
     ap.add_argument("--split", default="val")
@@ -95,7 +95,8 @@ def main():
     if args.engine == "vllm":
         samples = sample_vllm(args.adapter, tok, prompts, args.n)
     else:
-        model = common.load_model(args.adapter)
+        model = (common.load_model(name=str(args.adapter)) if common.is_merged(args.adapter)
+                 else common.load_model(args.adapter))
         model.eval()
         samples = sample(model, tok, prompts, args.n)
 
