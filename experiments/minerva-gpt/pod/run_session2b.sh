@@ -5,9 +5,10 @@
 set -uo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 cd "$HOME/minerva-gpt"
-bash pod/dpo_sweep.sh
-START_AT=7b DPO=0 bash pod/run_v2.sh
-if [ -f "$HOME/dpo_flags" ]; then
+[ -n "${SKIP_SWEEP:-}" ] || bash pod/dpo_sweep.sh
+if ! START_AT=7b DPO=0 bash pod/run_v2.sh || grep -q "7B checks failed" <(tail -5 "$HOME/minerva.log"); then
+  echo "== 7B SFT run failed its run or checks: no 7B DPO; look at the log" | tee -a "$HOME/minerva.log"
+elif [ -f "$HOME/dpo_flags" ]; then
   SIZES=7b TAG=dpobest DPO_FLAGS="$(cat "$HOME/dpo_flags")" bash pod/run_dpo_fix.sh
 else
   echo "== no DPO setting passed on 1B: the 7B stays SFT-only" | tee -a "$HOME/minerva.log"

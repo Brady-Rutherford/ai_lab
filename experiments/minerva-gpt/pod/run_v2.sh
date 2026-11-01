@@ -73,7 +73,8 @@ one_model() {
   else
     step "Fetching $BIG and checking vLLM can serve it"
     uv run python download_model.py "$BIG"
-    MINERVA_BASE_MODEL="$BIG" "$HOME/vllm-env/bin/python" -c \
+    # same sampler setting as vllm_sample.py: FlashInfer's would JIT-compile and needs ninja
+    VLLM_USE_FLASHINFER_SAMPLER=0 MINERVA_BASE_MODEL="$BIG" "$HOME/vllm-env/bin/python" -c \
       "import common; from vllm import LLM; LLM(common.BASE_MODEL, max_model_len=2048).generate('Hello'); print('vLLM serves', common.BASE_MODEL)"
     # 7B: a lower learning rate; the H200 has the memory to skip gradient checkpointing
     one_model 7b "$BIG" 1e-4 2.5e-5 "$BATCH_7B" "--no-checkpointing"

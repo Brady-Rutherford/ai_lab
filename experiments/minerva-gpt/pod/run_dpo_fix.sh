@@ -42,7 +42,7 @@ dpo_lr_of() { [ "$1" = 7b ] && echo 2.5e-5 || echo 5e-5; }
       step "[$label] $v: answers to rank and blind-test [$TAG] (retrieval on)"
       uv run python generate.py --adapter "$C/final-$TAG-$v" --variant "$v" --source all --n 2 --retrieve --engine vllm --out "$G/$v-val-$TAG.jsonl"
     done
-    if [ -z "${NO_RANK:-}" ]; then
+    if [ -z "${NO_RANK:-}" ] && compgen -G "$G/*-val-$TAG.jsonl" >/dev/null; then
       step "[$label] regurgitation [$TAG]"
       uv run python eval_regurgitation.py "$G"/*-val-"$TAG".jsonl || FAILED="$FAILED $label-regurgitation"
     fi
