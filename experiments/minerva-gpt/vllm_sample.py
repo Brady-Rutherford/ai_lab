@@ -9,7 +9,8 @@ HF path would.
     ~/vllm-env/bin/python vllm_sample.py JOB.json OUT.json
 
 JOB.json: {"adapter", "prompts": [[token ids]...], "n", "temperature", "top_p",
-"max_new_tokens", "eos_token_id"}. OUT.json: one list of n answers per prompt.
+"max_new_tokens", "eos_token_id"}. OUT.json: per prompt, n [answer, finished] pairs; finished
+is False when the answer hit max_new_tokens instead of ending.
 """
 
 import json
@@ -47,7 +48,8 @@ def main(job_path, out_path):
     lora = None if merged else LoRARequest("adapter", 1, job["adapter"])
     outputs = llm.generate([TokensPrompt(prompt_token_ids=ids) for ids in job["prompts"]],
                            params, lora_request=lora)
-    json.dump([[c.text.strip() for c in o.outputs] for o in outputs], open(out_path, "w"))
+    json.dump([[[c.text.strip(), c.finish_reason == "stop"] for c in o.outputs] for o in outputs],
+              open(out_path, "w"))
 
 
 if __name__ == "__main__":

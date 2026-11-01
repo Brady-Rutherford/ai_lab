@@ -6,7 +6,8 @@
 Reads my examples from data/sft/{split}.jsonl (val by default: never trained on, and kept
 apart from test, which stays for the final eval) and writes one row per ask to
 data/generations/{variant}-{split}.jsonl:
-    {"id", "class_id", "source", "los", "prompt", "real", "variant", "samples": [...]}
+    {"id", "class_id", "source", "los", "prompt", "real", "variant", "samples": [...], "finished": [...]}
+`finished` is False for an answer cut off at max_new_tokens rather than ended by the model.
 `--retrieve` adds my own top-graded train-split answers on the same LOs/HCs to the prompt
 (retrieve.py), the "retrieval informs" part of the preference stage.
 
@@ -35,7 +36,7 @@ def ask_id(row):
 
 
 def sample(model, tok, prompts, n, batch=4):
-    """n sampled answers per prompt (lists of chat messages), batched with left padding."""
+    """n (answer, finished) pairs per prompt (lists of chat messages), batched with left padding."""
     tok.padding_side = "left"
     out = []
     for i in range(0, len(prompts), batch):
@@ -44,8 +45,11 @@ def sample(model, tok, prompts, n, batch=4):
         with torch.no_grad():
             ids = model.generate(**enc, num_return_sequences=n, pad_token_id=tok.pad_token_id,
                                  eos_token_id=tok.eos_token_id, **SAMPLING)
-        answers = tok.batch_decode(ids[:, enc["input_ids"].shape[1]:], skip_special_tokens=True)
-        out += [[a.strip() for a in answers[j * n:(j + 1) * n]] for j in range(len(enc["input_ids"]))]
+        new = ids[:, enc["input_ids"].shape[1]:]
+        answers = tok.batch_decode(new, skip_special_tokens=True)
+        ended = [(row == tok.eos_token_id).any().item() for row in new]
+        pairs = [[a.strip(), e] for a, e in zip(answers, ended, strict=True)]
+        out += [pairs[j * n:(j + 1) * n] for j in range(len(enc["input_ids"]))]
     return out
 
 
@@ -103,7 +107,8 @@ def main():
     out = args.out or args.data / f"generations/{args.variant}-{args.split}.jsonl"
     common.write_jsonl(out, [
         {"id": ask_id(r), "class_id": r["class_id"], "source": r["source"], "los": r["los"],
-         "prompt": p, "real": r["completion"][0]["content"], "variant": args.variant, "samples": s}
+         "prompt": p, "real": r["completion"][0]["content"], "variant": args.variant,
+         "samples": [a for a, _ in s], "finished": [e for _, e in s]}
         for r, p, s in zip(rows, prompts, samples, strict=True)])
     print(f"{len(rows)} asks x {args.n} answers -> {out}")
 
