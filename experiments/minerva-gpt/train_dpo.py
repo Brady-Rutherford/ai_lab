@@ -87,9 +87,11 @@ def finished(row, i=0):
     return row["samples"][i].rstrip()[-1:] in tuple(".?!\"')")
 
 
-def spin_pairs(rows):
-    """My real answer (chosen) vs the model's first sample (rejected), per train ask."""
-    pairs, cut = [], 0
+def spin_pairs(rows, length_match=None):
+    """My real answer (chosen) vs the model's first sample (rejected), per train ask.
+    `length_match` (e.g. 0.3) keeps only pairs within that fraction of each other's length, so
+    length can't be what separates winner from loser."""
+    pairs, cut, unmatched = [], 0, 0
     for r in rows:
         real, model = r["real"], r["samples"][0]
         if len(real.split()) < SPIN_MIN_WORDS or not model.strip() or model.strip() == real.strip():
@@ -97,8 +99,13 @@ def spin_pairs(rows):
         if not finished(r):
             cut += 1
             continue
+        a, b = len(real.split()), len(model.split())
+        if length_match is not None and abs(a - b) > length_match * max(a, b):
+            unmatched += 1
+            continue
         pairs.append((r["prompt"], real, model))
-    print(f"SPIN: {len(pairs)} pairs; {cut} skipped because the model's answer was cut off")
+    print(f"SPIN: {len(pairs)} pairs; {cut} skipped because the model's answer was cut off"
+          + (f", {unmatched} because the lengths differ by more than {length_match:.0%}" if length_match else ""))
     return pairs
 
 
@@ -113,6 +120,10 @@ def main():
     ap.add_argument("--out", type=Path)
     ap.add_argument("--beta", type=float, default=0.1)
     ap.add_argument("--lr", type=float, default=5e-5, help="~10x a full-fine-tuning DPO rate")
+    ap.add_argument("--loss", choices=["sigmoid", "sigmoid_norm"], default="sigmoid",
+                    help="sigmoid_norm compares per-token log-probs, so length can't buy reward")
+    ap.add_argument("--ld-alpha", type=float, help="LD-DPO: weight on tokens beyond the shared length")
+    ap.add_argument("--length-match", type=float, help="keep SPIN pairs within this length ratio")
     ap.add_argument("--sft-weight", type=float, default=1.0,
                     help="weight of the SFT loss on chosen answers (RPO); 0 = plain DPO")
     ap.add_argument("--max-steps", type=int, default=-1)
@@ -126,7 +137,7 @@ def main():
     grade_model = GradeModel.load(args.grade_model) if args.grade_model.exists() else None
     gold = gold_pairs(common.read_jsonl(args.rankings), grade_model) if args.rankings else []
     auto = auto_pairs(common.read_jsonl(args.auto), args.voice_gate) if args.auto else []
-    spin = spin_pairs(common.read_jsonl(args.spin)) if args.spin else []
+    spin = spin_pairs(common.read_jsonl(args.spin), args.length_match) if args.spin else []
     pairs = gold * GOLD_REPEATS + auto + spin
     if not pairs:
         raise SystemExit("no DPO pairs: no rankings, or every SPIN sample already equals my real "
@@ -139,7 +150,8 @@ def main():
     config = DPOConfig(
         output_dir=str(out),
         beta=args.beta,
-        loss_type=["sigmoid", "sft"] if args.sft_weight else ["sigmoid"],
+        loss_type=[args.loss, "sft"] if args.sft_weight else [args.loss],
+        ld_alpha=args.ld_alpha,
         loss_weights=[1.0, args.sft_weight] if args.sft_weight else None,
         learning_rate=args.lr,
         lr_scheduler_type="cosine",

@@ -12,6 +12,7 @@ export PATH="$HOME/.local/bin:$PATH"
 cd "$HOME/minerva-gpt"
 VARIANTS="${VARIANTS:-A B}"
 START_AT="${START_AT:-1b}"
+DPO="${DPO:-1}"  # DPO=0: SFT only; answers to rank come from the SFT model
 # Sized for an H200 (141 GB). The effective batch stays 32 (gradient accumulation makes up
 # the rest), so bigger per-pass batches and no gradient checkpointing change speed, not
 # results. On an 80 GB H100: BATCH_1B=8 BATCH_7B=2.
@@ -40,6 +41,12 @@ one_model() {
     uv run python generate.py --adapter "$C/sft-$v" --variant "$v" --split val --source all --n 1 --engine vllm --out "$G/$v-val-plain.jsonl"
     step "[$label] $v: memorization after SFT"
     uv run python eval_memorization.py "$G/$v-train.jsonl" "$G/$v-val-plain.jsonl" || FAILED="$FAILED $label-$v-sft-memorization"
+    uv run python eval_drift.py "$G/$v-val-plain.jsonl" || FAILED="$FAILED $label-$v-sft-drift"
+    if [ "$DPO" != 1 ]; then
+      step "[$label] $v: answers to rank and blind-test (SFT model, retrieval on)"
+      uv run python generate.py --adapter "$C/sft-$v" --variant "$v" --source all --n 2 --retrieve --engine vllm --out "$G/$v-val.jsonl"
+      continue
+    fi
     step "[$label] $v: DPO on SPIN pairs, then fold SFT + DPO into one model"
     uv run python train_dpo.py --variant "$v" --spin "$G/$v-train.jsonl" --lr "$dpo_lr"
     uv run python merge_model.py "$C/sft-$v" "$C/dpo-$v" --out "$C/final-$v"
