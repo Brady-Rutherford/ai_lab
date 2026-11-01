@@ -12,6 +12,7 @@ At the prompt:
     /class WORDS   list the classes whose course, title or LOs contain all the words
     /class N       use match N from the last list (one match is picked straight away)
     /noclass       no class context
+    Ctrl+C         stop the current answer
     /quit
 Class context comes from data/sft/ (local only), so on a machine without it, ask without one.
 The model comes from my private HF repo on first use (needs the HF login), then from the local
@@ -148,7 +149,10 @@ def main():
         elif line == "/noclass":
             klass = None
         elif line:
-            answer(prompt(line, klass))
+            try:
+                answer(prompt(line, klass))
+            except KeyboardInterrupt:  # Ctrl+C stops this answer, not the chat
+                print("\n  [stopped]")
 
 
 if __name__ == "__main__":
