@@ -7,6 +7,7 @@
 
 --model LABEL=FILE names each model's answers, so two files of the same variant (SFT and DPO)
 stay apart; --a/--b label them A and B. --per-model N shows N answers from each model per ask.
+--exclude FILE skips the asks already judged there (a second round gets fresh asks).
 
 Rank: one held-out ask and its answers (2 from A, 2 from B), shuffled and unlabeled. For each,
 say "sounds like me" yes or no, then pick the best of the yeses. Saved to data/rankings.jsonl with
@@ -41,7 +42,7 @@ def append(path, row):
 
 
 class Store:
-    def __init__(self, models, data, per_model=None):
+    def __init__(self, models, data, per_model=None, exclude=()):
         self.asks, self.labels = {}, list(models)
         for label, path in models.items():
             for row in common.read_jsonl(path):
@@ -51,7 +52,8 @@ class Store:
         self.asks = {i: a for i, a in self.asks.items()
                      if {o["variant"] for o in a["answers"]} == set(self.labels)}
         self.files = {"rank": data / "rankings.jsonl", "blind": data / "blind.jsonl"}
-        self.done = {mode: {r["id"] for r in read(path)} for mode, path in self.files.items()}
+        self.seen = seen = {r["id"] for path in exclude for r in read(path)}
+        self.done = {mode: {r["id"] for r in read(path)} | seen for mode, path in self.files.items()}
         self.order = sorted(self.asks)
         random.Random(0).shuffle(self.order)
         self.shown = {}  # (mode, id) -> what the page was shown, with the hidden labels
@@ -88,7 +90,7 @@ class Store:
     def stats(self):
         blind = read(self.files["blind"])
         rate = {v: [r["correct"] for r in blind if r["variant"] == v] for v in self.labels}
-        return {"ranked": len(self.done["rank"]), "total": len(self.asks),
+        return {"ranked": len(self.done["rank"] - self.seen), "total": len(self.asks),
                 "blind": {v: {"n": len(x), "correct": sum(x)} for v, x in rate.items()}}
 
 
@@ -133,13 +135,15 @@ def main():
     ap.add_argument("--model", action="append", default=[], metavar="LABEL=FILE",
                     help="generations under a label of your choice; repeat per model")
     ap.add_argument("--per-model", type=int, help="answers per model per ask (default: all)")
+    ap.add_argument("--exclude", type=Path, action="append", default=[], metavar="FILE",
+                    help="skip asks already judged in this rankings or blind file")
     ap.add_argument("--data", type=Path, default=common.DATA, help="where picks are saved")
     ap.add_argument("--port", type=int, default=PORT)
     args = ap.parse_args()
     models = {label: Path(path) for label, path in (m.split("=", 1) for m in args.model)}
     models.update({label: path for label, path in (("A", args.a), ("B", args.b)) if path})
     args.data.mkdir(parents=True, exist_ok=True)
-    store = Store(models, args.data, args.per_model)
+    store = Store(models, args.data, args.per_model, args.exclude)
     print(f"{len(store.asks)} asks loaded; open http://{HOST}:{args.port}")
     ThreadingHTTPServer((HOST, args.port), handler(store)).serve_forever()
 
