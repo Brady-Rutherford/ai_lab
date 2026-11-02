@@ -111,6 +111,11 @@ without changing results:
 
 Move data by rsync over SSH, use no persistent volumes, and terminate the box after each run.
 
+## Planned
+
+- **A live class:** the model takes part in one online CS156 session as me, with the professor's
+  agreement, on a GPU pod. See [LIVE_CLASS_PLAN.md](LIVE_CLASS_PLAN.md). Not started.
+
 ## Waiting on
 
 - **Assignment harvest:** instructions plus my submissions, split by section. It needs a fresh
