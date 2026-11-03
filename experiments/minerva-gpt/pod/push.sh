@@ -7,6 +7,8 @@
 # Data = data/sft, data/sft_classmates, data/transcripts, data/context and stats.json: masked, and only after
 # privacy_check.py passes. Once data/rankings.jsonl exists (the DPO session), the rankings,
 # the session-1 adapters and the scored samples go up too.
+# CONTEXT_ONLY=1 sends only what the context test reads: the validation prompts and class so far,
+# and the earlier per-answer losses (numbers only). No checkpoints, no other split, no classmates' data.
 # Never sent: raw CS156 data, the Forum cookie, any .env file.
 set -euo pipefail
 HOST="${1:?usage: push.sh user@host [port] [ssh_key]}"
@@ -50,6 +52,17 @@ else
   rsync -az --files-from="$LIST" -e "$SSH" "$HERE/" "$HOST:minerva-gpt/"
 fi
 
+if [ -n "${CONTEXT_ONLY:-}" ]; then
+  [ -n "$CTX" ] || { echo "!! no data/context: run prepare_data.py first"; exit 1; }
+  echo "== data (masked): only what the context test reads"
+  $SSH "$HOST" 'mkdir -p minerva-gpt/data/sft minerva-gpt/data/context minerva-gpt/runs'
+  rsync -az -e "$SSH" "$HERE/data/sft/val.jsonl" "$HOST:minerva-gpt/data/sft/"
+  rsync -az -e "$SSH" "$HERE/data/context/val.jsonl" "$HOST:minerva-gpt/data/context/"
+  [ ! -f "$HERE/runs/perrow-7b.jsonl" ] || rsync -az -e "$SSH" "$HERE/runs/perrow-7b.jsonl" "$HOST:minerva-gpt/runs/"
+  echo "done. Next, on the pod: bash ~/minerva-gpt/pod/setup.sh"
+  exit 0
+fi
+
 echo "== data (masked)"
 $SSH "$HOST" 'mkdir -p minerva-gpt/data'
 rsync -az -e "$SSH" "$HERE/data/sft" "$HERE/data/sft_classmates" "$HERE/data/transcripts" \
@@ -57,7 +70,7 @@ rsync -az -e "$SSH" "$HERE/data/sft" "$HERE/data/sft_classmates" "$HERE/data/tra
 if [ -f "$HERE/data/rankings.jsonl" ]; then
   echo "== for DPO (session 2): my rankings, the session-1 adapters and scored samples"
   rsync -az -e "$SSH" "$HERE/data/rankings.jsonl" "$HOST:minerva-gpt/data/"
-  rsync -az -e "$SSH" "$HERE/data/generations" "$HOST:minerva-gpt/data/"
+  rsync -az --exclude 'context-*' -e "$SSH" "$HERE/data/generations" "$HOST:minerva-gpt/data/"
   rsync -az --exclude 'checkpoint-*' -e "$SSH" "$HERE/checkpoints" "$HOST:minerva-gpt/"
 fi
 echo "done. Next, on the pod: bash ~/minerva-gpt/pod/setup.sh"
