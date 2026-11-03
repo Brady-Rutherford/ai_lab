@@ -12,6 +12,9 @@ JOB.json: {"adapter", "prompts": [[token ids]...], "n", "temperature", "top_p",
 "max_new_tokens", "eos_token_id"}. OUT.json: per prompt, n [answer, finished] pairs; finished
 is False when the answer hit max_new_tokens instead of ending.
 
+Optional "stop": strings that end an answer (eval_context.py: another speaker's line); each answer
+then comes back as [answer, finished, stopped_at_one_of_them].
+
 Scoring instead (eval_context.py): JOB.json {"adapter", "score": [{"prompt": ids, "answer": ids}...]}
 -> OUT.json: per item, the mean log-probability of the answer's tokens after its prompt (the
 loss eval_compare.py reports, negated). Optional in both: "max_model_len" (default 4096).
@@ -66,11 +69,12 @@ def main(job_path, out_path):
         return
     params = SamplingParams(n=job["n"], temperature=job["temperature"], top_p=job["top_p"],
                             max_tokens=job["max_new_tokens"], stop_token_ids=[job["eos_token_id"]],
-                            seed=0)
+                            stop=job.get("stop") or None, seed=0)
     outputs = llm.generate([TokensPrompt(prompt_token_ids=ids) for ids in job["prompts"]],
                            params, lora_request=lora)
-    json.dump([[[c.text.strip(), c.finish_reason == "stop"] for c in o.outputs] for o in outputs],
-              open(out_path, "w"))
+    stops = bool(job.get("stop"))
+    json.dump([[[c.text.strip(), c.finish_reason == "stop"] + ([isinstance(c.stop_reason, str)] if stops else [])
+                for c in o.outputs] for o in outputs], open(out_path, "w"))
 
 
 if __name__ == "__main__":

@@ -16,8 +16,8 @@ the class in context with no retraining; if they are worse, the full-class retra
 
 Scored on (1) loss on my real answer, paired answer by answer against the window, with a class
 bootstrap; (2) one sampled answer per prompt: my habits per 1,000 words, length, cut-offs, loops,
-transcript breaks (the answer starts writing other speakers' turns) and overlap with what I
-actually said. Runs on the GPU pod through vLLM (vllm_sample.py, in ~/vllm-env). Writes
+transcript breaks (the answer tries to write another speaker's line: cut there by a stop rule,
+and counted) and overlap with what I actually said. Runs on the GPU pod through vLLM (vllm_sample.py, in ~/vllm-env). Writes
 data/generations/7b/context-test.json, plus one generation file per variant
 (B-val-ctx-<variant>.jsonl) that rank_server.py can show blind.
 """
@@ -41,7 +41,10 @@ WORD = re.compile(r"[a-z]+(?:'[a-z]+)?")
 HABITS = {"like": r"\blike\b", "I think": r"\bi think\b",
           "So at sentence start": r"(?:^|[.?!]\s+)so\b", "yeah / yep": r"\b(yeah|yep)\b"}
 LOOP = re.compile(r"\b(\w+)( \1\b){2,}")
-BREAK = re.compile(r"(?:^|\n)\s*(Professor|Student \d+|Speaker|Brady):")  # writes others' turns
+BREAK = re.compile(r"^\s*(Professor|Student \d+|Speaker|Brady):")  # an answer that opens as a turn
+# The guard the live bot uses too: an answer ends where it would start another speaker's line, so
+# the bot can never say someone else's words. The test counts how often it fired.
+STOPS = ["\nProfessor:", "\nStudent ", "\nSpeaker:", "\nBrady:"]
 FILLER = {"like", "yeah", "yep", "um", "uh", "okay", "ok", "kinda", "gonna", "wanna", "really",
           "just", "thing", "things", "think", "know", "mean", "sort", "kind", "lot"}
 
@@ -154,7 +157,7 @@ def main():
     out = run_vllm({"adapter": str(args.model.resolve()), "prompts": flat, "n": args.n,
                     "temperature": SAMPLING["temperature"], "top_p": SAMPLING["top_p"],
                     "max_new_tokens": SAMPLING["max_new_tokens"], "eos_token_id": tok.eos_token_id,
-                    "max_model_len": max_len})
+                    "max_model_len": max_len, "stop": STOPS})
     samples = {v: out[i * len(rows):(i + 1) * len(rows)] for i, v in enumerate(VARIANTS)}
 
     real = [r["completion"][0]["content"] for r in rows]
@@ -172,7 +175,7 @@ def main():
 
     report = {"answers": len(rows), "tail_tokens": args.tail_tokens, "variants": {}}
     for v in VARIANTS:
-        texts = [t for per in samples[v] for t, _ in per]
+        texts = [a[0] for per in samples[v] for a in per]
         own = [i for i, per in enumerate(samples[v]) for _ in per]
         d = [a - b for a, b in zip(loss[v], loss["window"])]
         res = {"loss": st.mean(loss[v]), "prompt_tokens_median": st.median(len(p) for p in ids[v])}
@@ -182,9 +185,10 @@ def main():
                     "better_on_share": sum(x < 0 for x in d) / len(d)}
         res["habits_per_1000"] = {h: per_1000(p, texts) for h, p in HABITS.items()}
         res["length_vs_mine"] = st.median(len(t.split()) for t in texts) / st.median(len(t.split()) for t in real)
-        res["cut_off_share"] = sum(not f for per in samples[v] for _, f in per) / len(texts)
+        res["cut_off_share"] = sum(not a[1] for per in samples[v] for a in per) / len(texts)
         res["loops"] = sum(bool(LOOP.search(t.lower())) for t in texts)
-        res["transcript_breaks"] = sum(bool(BREAK.search(t)) for t in texts)
+        res["transcript_breaks"] = (sum(a[2] for per in samples[v] for a in per)
+                                    + sum(bool(BREAK.match(t)) for t in texts))
         res["content_overlap"] = st.mean(f1(content_words(t), content_words(real[i])) for t, i in zip(texts, own))
         res["content_overlap_other_answer"] = st.mean(f1(content_words(t), content_words(real[other[i]]))
                                                       for t, i in zip(texts, own))
@@ -197,7 +201,7 @@ def main():
         common.write_jsonl(args.out / f"B-val-ctx-{v}.jsonl", [
             {"id": common.prompt_key(r["prompt"]), "class_id": r["class_id"], "source": r["source"],
              "los": r["los"], "prompt": r["prompt"], "real": real[i], "variant": "B",
-             "samples": [t for t, _ in samples[v][i]], "finished": [f for _, f in samples[v][i]]}
+             "samples": [a[0] for a in samples[v][i]], "finished": [a[1] for a in samples[v][i]]}
             for i, r in enumerate(rows)])
     report["habits_mine_per_1000"] = {h: per_1000(p, real) for h, p in HABITS.items()}
     args.out.mkdir(parents=True, exist_ok=True)
@@ -217,7 +221,7 @@ def main():
     line("length vs mine (median)", lambda r: f"{r['length_vs_mine']:.2f}x")
     line("cut off at the length limit", lambda r: f"{100 * r['cut_off_share']:.0f}%")
     line("answers stuck in a loop", lambda r: f"{r['loops']}")
-    line("answers writing others' turns", lambda r: f"{r['transcript_breaks']}")
+    line("tried to write another speaker", lambda r: f"{r['transcript_breaks']}")
     line("content overlap with mine", lambda r: f"{100 * r['content_overlap']:.1f}%")
     line("  with an unrelated answer", lambda r: f"{100 * r['content_overlap_other_answer']:.1f}%")
     if sem:
