@@ -11,6 +11,10 @@ HF path would.
 JOB.json: {"adapter", "prompts": [[token ids]...], "n", "temperature", "top_p",
 "max_new_tokens", "eos_token_id"}. OUT.json: per prompt, n [answer, finished] pairs; finished
 is False when the answer hit max_new_tokens instead of ending.
+
+Scoring instead (eval_context.py): JOB.json {"adapter", "score": [{"prompt": ids, "answer": ids}...]}
+-> OUT.json: per item, the mean log-probability of the answer's tokens after its prompt (the
+loss eval_compare.py reports, negated). Optional in both: "max_model_len" (default 4096).
 """
 
 import json
@@ -36,16 +40,33 @@ def main(job_path, out_path):
     # Throughput settings, none of which change what is sampled: most of the GPU for the KV
     # cache, more sequences in flight, bigger prefill batches, and prefix caching, since many
     # asks from one class share its long context block.
+    scoring = "score" in job
     llm = LLM(job["adapter"] if merged else common.BASE_MODEL, dtype="bfloat16", enable_lora=not merged,
-              max_lora_rank=common.LORA["r"], max_model_len=4096, seed=0,
-              gpu_memory_utilization=float(os.environ.get("VLLM_GPU_UTIL", "0.92")),
+              max_lora_rank=common.LORA["r"], max_model_len=int(job.get("max_model_len", 4096)), seed=0,
+              # scoring keeps a log-prob row per prompt token of each prefill chunk: smaller chunks
+              # and a little more free memory than sampling needs
+              gpu_memory_utilization=float(os.environ.get("VLLM_GPU_UTIL", "0.85" if scoring else "0.92")),
               max_num_seqs=int(os.environ.get("VLLM_MAX_SEQS", "512")),
-              max_num_batched_tokens=int(os.environ.get("VLLM_BATCHED_TOKENS", "16384")),
-              enable_prefix_caching=True)
+              max_num_batched_tokens=int(os.environ.get("VLLM_BATCHED_TOKENS", "4096" if scoring else "16384")),
+              enable_prefix_caching=not scoring)  # prompt log-probs are computed in full
+    lora = None if merged else LoRARequest("adapter", 1, job["adapter"])
+    if scoring:
+        # Chunks of 64: vLLM returns a log-prob entry for every prompt position, and full-class
+        # prompts run to ~25k tokens, so the results are reduced to one number per item as they come.
+        items, means, chunk = job["score"], [], 64
+        for i in range(0, len(items), chunk):
+            part = items[i:i + chunk]
+            outputs = llm.generate([TokensPrompt(prompt_token_ids=it["prompt"] + it["answer"]) for it in part],
+                                   SamplingParams(max_tokens=1, prompt_logprobs=0), lora_request=lora)
+            for it, o in zip(part, outputs):
+                ids, start = it["prompt"] + it["answer"], len(it["prompt"])
+                lp = [o.prompt_logprobs[k][ids[k]].logprob for k in range(start, len(ids))]
+                means.append(sum(lp) / len(lp))
+        json.dump(means, open(out_path, "w"))
+        return
     params = SamplingParams(n=job["n"], temperature=job["temperature"], top_p=job["top_p"],
                             max_tokens=job["max_new_tokens"], stop_token_ids=[job["eos_token_id"]],
                             seed=0)
-    lora = None if merged else LoRARequest("adapter", 1, job["adapter"])
     outputs = llm.generate([TokensPrompt(prompt_token_ids=ids) for ids in job["prompts"]],
                            params, lora_request=lora)
     json.dump([[[c.text.strip(), c.finish_reason == "stop"] for c in o.outputs] for o in outputs],

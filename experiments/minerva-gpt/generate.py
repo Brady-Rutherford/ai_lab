@@ -17,7 +17,6 @@ hands the same token ids to vllm_sample.py in its own environment ($VLLM_PYTHON,
 """
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -32,7 +31,7 @@ SAMPLING = {"do_sample": True, "temperature": 0.8, "top_p": 0.95, "max_new_token
 
 
 def ask_id(row):
-    return hashlib.sha1(row["prompt"][0]["content"].encode()).hexdigest()[:12]
+    return common.prompt_key(row["prompt"])
 
 
 def sample(model, tok, prompts, n, batch=4):
