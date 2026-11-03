@@ -9,8 +9,10 @@ Pairs, as (prompt, chosen, rejected):
 - SPIN (self-play fine-tuning, 2024), from generations on train asks: what I really said beats what the
   SFT model said to the same ask. No labeling needed, and it pushes toward my actual
   reasoning rather than between near-identical samples. Answers under 15 words (often
-  transcription fragments) are skipped. These are answers SFT already trained on, so check
-  eval_memorization.py afterwards.
+  transcription fragments) are skipped, and so are model answers cut off at the length cap:
+  the chat template still ends them with eos, so they would teach "stopping loses" and DPO
+  learned to ramble (session 2, 1B: 66% of answers hit the cap). These are answers SFT already
+  trained on, so check eval_memorization.py and eval_drift.py afterwards.
 - gold, from my rankings (rank_server.py). My pick beats every answer I marked "not my voice"
   and every other answer I marked as my voice. Between two non-picked answers that both sound
   like me, the one the grade model scores higher wins. Voice is a hard gate: an answer I marked
@@ -21,7 +23,9 @@ Pairs, as (prompt, chosen, rejected):
 
 The SFT adapter is merged into the base first and a fresh LoRA adapter is trained on top, so
 DPO's reference model (the same weights with the new adapter off) is the SFT model, i.e. me.
-`--beta` is the leash: higher keeps the model closer to that SFT model. Each DPO comparison
+`--beta` is the leash: higher keeps the model closer to that SFT model. `--sft-weight` adds
+an SFT loss on the chosen answer (the RPO recipe), which keeps my real answers, endings and
+all, likely while DPO pushes the rejected ones down. Each DPO comparison
 carries at most one bit, so this stage steers the voice the SFT stage taught; it can't
 teach new things about me.
 """
@@ -75,13 +79,33 @@ def auto_pairs(rows, voice_gate):
     return pairs
 
 
-def spin_pairs(rows):
-    """My real answer (chosen) vs the model's first sample (rejected), per train ask."""
-    pairs = []
+def finished(row, i=0):
+    """Whether sample i ended on its own; older files without the flag fall back to whether it
+    ends a sentence."""
+    if "finished" in row:
+        return row["finished"][i]
+    return row["samples"][i].rstrip()[-1:] in tuple(".?!\"')")
+
+
+def spin_pairs(rows, length_match=None):
+    """My real answer (chosen) vs the model's first sample (rejected), per train ask.
+    `length_match` (e.g. 0.3) keeps only pairs within that fraction of each other's length, so
+    length can't be what separates winner from loser."""
+    pairs, cut, unmatched = [], 0, 0
     for r in rows:
         real, model = r["real"], r["samples"][0]
-        if len(real.split()) >= SPIN_MIN_WORDS and model.strip() and model.strip() != real.strip():
-            pairs.append((r["prompt"], real, model))
+        if len(real.split()) < SPIN_MIN_WORDS or not model.strip() or model.strip() == real.strip():
+            continue
+        if not finished(r):
+            cut += 1
+            continue
+        a, b = len(real.split()), len(model.split())
+        if length_match is not None and abs(a - b) > length_match * max(a, b):
+            unmatched += 1
+            continue
+        pairs.append((r["prompt"], real, model))
+    print(f"SPIN: {len(pairs)} pairs; {cut} skipped because the model's answer was cut off"
+          + (f", {unmatched} because the lengths differ by more than {length_match:.0%}" if length_match else ""))
     return pairs
 
 
@@ -96,6 +120,12 @@ def main():
     ap.add_argument("--out", type=Path)
     ap.add_argument("--beta", type=float, default=0.1)
     ap.add_argument("--lr", type=float, default=5e-5, help="~10x a full-fine-tuning DPO rate")
+    ap.add_argument("--loss", choices=["sigmoid", "sigmoid_norm"], default="sigmoid",
+                    help="sigmoid_norm compares per-token log-probs, so length can't buy reward")
+    ap.add_argument("--ld-alpha", type=float, help="LD-DPO: weight on tokens beyond the shared length")
+    ap.add_argument("--length-match", type=float, help="keep SPIN pairs within this length ratio")
+    ap.add_argument("--sft-weight", type=float, default=1.0,
+                    help="weight of the SFT loss on chosen answers (RPO); 0 = plain DPO")
     ap.add_argument("--max-steps", type=int, default=-1)
     ap.add_argument("--grade-model", type=Path, default=MODEL_PATH)
     args = ap.parse_args()
@@ -107,7 +137,7 @@ def main():
     grade_model = GradeModel.load(args.grade_model) if args.grade_model.exists() else None
     gold = gold_pairs(common.read_jsonl(args.rankings), grade_model) if args.rankings else []
     auto = auto_pairs(common.read_jsonl(args.auto), args.voice_gate) if args.auto else []
-    spin = spin_pairs(common.read_jsonl(args.spin)) if args.spin else []
+    spin = spin_pairs(common.read_jsonl(args.spin), args.length_match) if args.spin else []
     pairs = gold * GOLD_REPEATS + auto + spin
     if not pairs:
         raise SystemExit("no DPO pairs: no rankings, or every SPIN sample already equals my real "
@@ -120,6 +150,9 @@ def main():
     config = DPOConfig(
         output_dir=str(out),
         beta=args.beta,
+        loss_type=[args.loss, "sft"] if args.sft_weight else [args.loss],
+        ld_alpha=args.ld_alpha,
+        loss_weights=[1.0, args.sft_weight] if args.sft_weight else None,
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
         warmup_steps=0.05,

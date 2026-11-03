@@ -23,6 +23,9 @@ gpu = [
     "kernels>=0.17.2,<0.18.0",  # the range transformers 5.21 accepts; 0.18 silently disables hub kernels
     "liger-kernel>=0.8.5 ; sys_platform == 'linux'",
 ]
+mac = [
+    "mlx-lm>=0.32.2 ; sys_platform == 'darwin'",
+]
 
 [tool.uv]
 package = false

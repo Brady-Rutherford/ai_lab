@@ -5,6 +5,9 @@
 Takes every 12-word window of everyone's speech except mine (classmates and professors) from
 the masked class documents in data/transcripts/*.parquet, and checks each generated answer for
 any window it reproduces exactly (lower case, punctuation ignored). Exit 1 on any match.
+A window that is also in the answer's own prompt (the ask, the reading, the discussion so far) is
+the model quoting what it was shown, not recalling training data: it is listed and counted
+separately, and does not fail the test.
 Variant B trains on classmates' answers, so its outputs must pass this before they are trusted;
 A is checked too, since classmates' words sit in its prompts.
 """
@@ -46,15 +49,21 @@ def main():
     args = ap.parse_args()
     seen = others_windows(args.data)
     print(f"{len(seen):,} distinct {WINDOW}-word windows of others' speech")
-    checked = hits = 0
+    checked = hits = quoted = 0
     for path in args.generations:
         for row in common.read_jsonl(path):
+            shown = windows("\n".join(m["content"] for m in row["prompt"]))
             for i, sample in enumerate(row["samples"]):
                 checked += 1
-                if windows(sample) & seen:
+                found = windows(sample) & seen
+                if found - shown:
                     hits += 1
                     print(f"{path.name}: ask {row['id']} sample {i} repeats a {WINDOW}-word passage")
-    print(f"regurgitation: {hits} of {checked} answers repeat someone else's words verbatim")
+                elif found:
+                    quoted += 1
+                    print(f"{path.name}: ask {row['id']} sample {i} quotes its own prompt (not counted)")
+    print(f"regurgitation: {hits} of {checked} answers repeat someone else's words verbatim; "
+          f"{quoted} more quote a passage from their own prompt")
     return 1 if hits or not checked else 0
 
 

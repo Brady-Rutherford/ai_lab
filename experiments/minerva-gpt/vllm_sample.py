@@ -9,7 +9,8 @@ HF path would.
     ~/vllm-env/bin/python vllm_sample.py JOB.json OUT.json
 
 JOB.json: {"adapter", "prompts": [[token ids]...], "n", "temperature", "top_p",
-"max_new_tokens", "eos_token_id"}. OUT.json: one list of n answers per prompt.
+"max_new_tokens", "eos_token_id"}. OUT.json: per prompt, n [answer, finished] pairs; finished
+is False when the answer hit max_new_tokens instead of ending.
 """
 
 import json
@@ -32,15 +33,23 @@ import common  # standard library only; sets HF offline mode, so the model loads
 def main(job_path, out_path):
     job = json.load(open(job_path))
     merged = common.is_merged(job["adapter"])  # SFT + DPO folded in: vLLM can't stack adapters
+    # Throughput settings, none of which change what is sampled: most of the GPU for the KV
+    # cache, more sequences in flight, bigger prefill batches, and prefix caching, since many
+    # asks from one class share its long context block.
     llm = LLM(job["adapter"] if merged else common.BASE_MODEL, dtype="bfloat16", enable_lora=not merged,
-              max_lora_rank=common.LORA["r"], max_model_len=4096, seed=0)
+              max_lora_rank=common.LORA["r"], max_model_len=4096, seed=0,
+              gpu_memory_utilization=float(os.environ.get("VLLM_GPU_UTIL", "0.92")),
+              max_num_seqs=int(os.environ.get("VLLM_MAX_SEQS", "512")),
+              max_num_batched_tokens=int(os.environ.get("VLLM_BATCHED_TOKENS", "16384")),
+              enable_prefix_caching=True)
     params = SamplingParams(n=job["n"], temperature=job["temperature"], top_p=job["top_p"],
                             max_tokens=job["max_new_tokens"], stop_token_ids=[job["eos_token_id"]],
                             seed=0)
     lora = None if merged else LoRARequest("adapter", 1, job["adapter"])
     outputs = llm.generate([TokensPrompt(prompt_token_ids=ids) for ids in job["prompts"]],
                            params, lora_request=lora)
-    json.dump([[c.text.strip() for c in o.outputs] for o in outputs], open(out_path, "w"))
+    json.dump([[[c.text.strip(), c.finish_reason == "stop"] for c in o.outputs] for o in outputs],
+              open(out_path, "w"))
 
 
 if __name__ == "__main__":

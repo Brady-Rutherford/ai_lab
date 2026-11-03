@@ -70,7 +70,7 @@ function el(tag, attrs = {}, ...kids) {
 
 function showMeta(s) {
   const b = s.blind || {}, part = v => b[v] && b[v].n ? `${v}: ${b[v].correct}/${b[v].n} spotted` : `${v}: none yet`;
-  meta.textContent = `${s.ranked} of ${s.total} asks ranked · blind test ${part("A")}, ${part("B")} (50% = indistinguishable)`;
+  meta.textContent = `${s.ranked} of ${s.total} asks ranked · blind test ${Object.keys(b).map(part).join(", ")} (50% = indistinguishable)`;
 }
 
 async function load() {

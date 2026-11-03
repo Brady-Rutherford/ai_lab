@@ -51,6 +51,7 @@ run eval_memorization.py "$SY/gen-A-train.jsonl" "$SY/gen-A-val-plain.jsonl" \
 # SPIN with the barely trained B: A reproduces the fake template exactly, which leaves no pairs
 run generate.py --adapter "$SY/sft-B" --variant B --data "$SY" --split train --source all --n 1 --limit 4 --engine "$ENGINE" --out "$SY/gen-B-train.jsonl"
 run train_dpo.py --variant B --spin "$SY/gen-B-train.jsonl" --sft "$SY/sft-B" --out "$SY/dpo-spin-B" --max-steps 2
+run eval_drift.py "$SY/gen-B-train.jsonl" || echo "   (a fail is possible here: barely trained fake model)"
 run merge_model.py "$SY/sft-B" "$SY/dpo-spin-B" --out "$SY/final-A"
 run generate.py --adapter "$SY/final-A" --variant A --data "$SY" --n 1 --limit 2 --engine "$ENGINE" --out "$SY/gen-final.jsonl"
 

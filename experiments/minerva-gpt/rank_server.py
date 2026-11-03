@@ -1,7 +1,14 @@
 """Local ranking page: judge the model's answers blind; the picks become DPO pairs.
 
     uv run python rank_server.py --a data/generations/A-val.jsonl --b data/generations/B-val.jsonl
+    uv run python rank_server.py --model sft-A=data/generations/7b/A-val.jsonl \
+        --model dpo-A=data/generations/7b/A-val-dpobest.jsonl ... --per-model 1 --data data/judge-7b
     then open http://127.0.0.1:8765
+
+--model LABEL=FILE names each model's answers, so two files of the same variant (SFT and DPO)
+stay apart; --a/--b label them A and B. --per-model N shows N answers from each model per ask.
+--exclude FILE skips the asks already judged there (a second round gets fresh asks).
+--source class_turn shows only one kind of ask (class_turn = what I said in class).
 
 Rank: one held-out ask and its answers (2 from A, 2 from B), shuffled and unlabeled. For each,
 say "sounds like me" yes or no, then pick the best of the yeses. Saved to data/rankings.jsonl with
@@ -36,14 +43,19 @@ def append(path, row):
 
 
 class Store:
-    def __init__(self, paths, data):
-        self.asks = {}
-        for path in paths:
+    def __init__(self, models, data, per_model=None, exclude=(), source=None):
+        self.asks, self.labels = {}, list(models)
+        for label, path in models.items():
             for row in common.read_jsonl(path):
                 ask = self.asks.setdefault(row["id"], {"row": row, "answers": []})
-                ask["answers"] += [{"text": s, "variant": row["variant"]} for s in row["samples"]]
+                ask["answers"] += [{"text": s, "variant": label} for s in row["samples"][:per_model]]
+        # only asks every model answered, so each screen compares all of them
+        self.asks = {i: a for i, a in self.asks.items()
+                     if {o["variant"] for o in a["answers"]} == set(self.labels)
+                     and source in (None, a["row"]["source"])}
         self.files = {"rank": data / "rankings.jsonl", "blind": data / "blind.jsonl"}
-        self.done = {mode: {r["id"] for r in read(path)} for mode, path in self.files.items()}
+        self.seen = seen = {r["id"] for path in exclude for r in read(path)}
+        self.done = {mode: {r["id"] for r in read(path)} | seen for mode, path in self.files.items()}
         self.order = sorted(self.asks)
         random.Random(0).shuffle(self.order)
         self.shown = {}  # (mode, id) -> what the page was shown, with the hidden labels
@@ -79,8 +91,8 @@ class Store:
 
     def stats(self):
         blind = read(self.files["blind"])
-        rate = {v: [r["correct"] for r in blind if r["variant"] == v] for v in ("A", "B")}
-        return {"ranked": len(self.done["rank"]), "total": len(self.asks),
+        rate = {v: [r["correct"] for r in blind if r["variant"] == v] for v in self.labels}
+        return {"ranked": len((self.done["rank"] - self.seen) & set(self.asks)), "total": len(self.asks),
                 "blind": {v: {"n": len(x), "correct": sum(x)} for v, x in rate.items()}}
 
 
@@ -122,10 +134,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--a", type=Path, help="generations from variant A")
     ap.add_argument("--b", type=Path, help="generations from variant B")
-    ap.add_argument("--data", type=Path, default=common.DATA)
+    ap.add_argument("--model", action="append", default=[], metavar="LABEL=FILE",
+                    help="generations under a label of your choice; repeat per model")
+    ap.add_argument("--per-model", type=int, help="answers per model per ask (default: all)")
+    ap.add_argument("--exclude", type=Path, action="append", default=[], metavar="FILE",
+                    help="skip asks already judged in this rankings or blind file")
+    ap.add_argument("--source", choices=["class_turn", "pcw", "poll"], help="only this kind of ask")
+    ap.add_argument("--data", type=Path, default=common.DATA, help="where picks are saved")
     ap.add_argument("--port", type=int, default=PORT)
     args = ap.parse_args()
-    store = Store([p for p in (args.a, args.b) if p], args.data)
+    models = {label: Path(path) for label, path in (m.split("=", 1) for m in args.model)}
+    models.update({label: path for label, path in (("A", args.a), ("B", args.b)) if path})
+    args.data.mkdir(parents=True, exist_ok=True)
+    store = Store(models, args.data, args.per_model, args.exclude, args.source)
     print(f"{len(store.asks)} asks loaded; open http://{HOST}:{args.port}")
     ThreadingHTTPServer((HOST, args.port), handler(store)).serve_forever()
 
