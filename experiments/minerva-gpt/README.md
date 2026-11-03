@@ -113,12 +113,12 @@ Move data by rsync over SSH, use no persistent volumes, and terminate the box af
 
 ## Planned
 
-- **Context test (next pod run; handoff in [NEXT_SESSION.md](NEXT_SESSION.md)):** does the trained model answer as well with the class so far in
-  its prompt? `eval_context.py` compares the trained window against the window plus the last ~4,000
-  tokens of the class and plus the whole class, on the held-out spoken answers. Build the data with
-  `prepare_data.py` (it now writes `data/context/`), `pod/push.sh`, then on the pod
-  `HF_TOKEN=$(cat) bash pod/run_context_test.sh` with the HF login piped in. If the longer prompts
-  match or beat the window, the live bot needs no retraining.
+- **Context test (next pod run; handoff in [NEXT_SESSION.md](NEXT_SESSION.md)):** does the trained model answer as well, and
+  still sound like me, with the class so far in its prompt? `eval_context.py` compares the trained
+  window with the last ~2,500 tokens of the class, the whole class before the ask, and the whole class
+  at the very top, on the held-out spoken answers. Placement matters because 24 of the 32 layers see
+  only the last 4,096 tokens. `uv run python smoke_context.py` tests it without a GPU; NEXT_SESSION.md
+  has the pod commands and the decision rule. Nothing is trained.
 - **A live class:** the model takes part in one online CS156 session as me, with the professor's
   agreement, on a GPU pod. See [LIVE_CLASS_PLAN.md](LIVE_CLASS_PLAN.md). Not started.
 

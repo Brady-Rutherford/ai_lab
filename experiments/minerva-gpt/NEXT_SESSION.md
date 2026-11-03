@@ -19,62 +19,112 @@ the pod I give you."* Everything needed is here or linked.
 
 The live bot (`LIVE_CLASS_PLAN.md`) wants the class so far in its prompt. The model was trained on
 short windows (median 743 tokens) and its replies were only ever my words, then end-of-text. The
-question: **does it answer as well with the class in front of it, without retraining?**
+question: **does it answer as well, and still sound like me, with the class in front of it, without
+retraining?** This tests the current model; nothing is trained.
 
-`eval_context.py` scores the same model on my **618 held-out spoken answers** (93 validation
-classes) under three prompts:
+`eval_context.py` scores the same model on my **618 held-out spoken answers** (from the 84 validation
+classes with an answer of mine) under four prompts. Sizes measured on the real prompts:
 
-| Variant | Prompt | Size |
-| --- | --- | --- |
-| window (control) | Exactly as trained | ~900 tokens |
-| tail | Window + the last ~4,000 tokens of the class so far | ~1,100-4,900 |
-| full | Window + the whole class so far (capped at 28,000 tokens) | up to ~21,000 |
+| Variant | Prompt | Median tokens | Prompt + answer within 4,096 | Voice tag in reach of all 32 layers |
+| --- | --- | --- | --- | --- |
+| window (control) | Exactly as trained | 743 | 100% | 100% |
+| tail | The last ~2,500 tokens of the class, before the ask | 3,111 | 100% | 100% |
+| full | The whole class so far, before the ask | 7,410 (longest ~19,000) | 23% | 23% |
+| full-top | The whole class so far, at the very top; the trained prompt after it, untouched | 7,410 | 23% | 100% |
+
+**Why placement matters.** 24 of OLMo 3 7B's 32 layers see only the last 4,096 tokens; the other 8 see
+everything (`sliding_window` and `layer_types` in its config). The first line of every prompt is the
+voice tag, `Answer as: Brady`. So `full` puts the tag and my PCW out of those layers' reach on 77% of
+answers. If `full` does badly, `tail` and `full-top` say whether length or placement is to blame, which
+could save a retraining.
 
 The class so far (`data/context/val.jsonl`, built by `prepare_data.py`) is everything said before the
-professor's ask, masked, as `Who: text` lines. It goes in as a `Class so far:` block just before
-`Professor: <ask>`, so every prompt ends exactly as in training. Checked on the real data: the
-answer being scored never appears in it (0 of 618).
+professor's ask, masked, as `Who: text` lines, in a `Class so far:` block. Every prompt ends exactly as
+in training. Checked on the real data: the answer being scored never appears in its prompt (0 of 618).
 
 **Evals:**
-1. **Loss on my real answer (main result):** same answer tokens under each prompt, paired against
-   the window, 95% interval by resampling whole classes, plus the share of answers where it wins.
+1. **Loss on my real answer (main result):** same answer tokens under each prompt, paired against the
+   window, 95% interval by resampling whole classes, overall and by prompt length (up to 4,096: 141
+   answers; 4,097-8,192: 195; over 8,192: 282). Every answer's loss is saved, not only the averages.
 2. **One generated answer per prompt** (temperature 0.8, top-p 0.95, up to 256 tokens): my habits per
    1,000 words, length vs mine, cut-offs, loops, overlap with my real answer (content words, meaning).
 3. **Tried to write another speaker:** generation stops where an answer would start a new
    `Professor:` / `Student N:` / `Speaker:` / `Brady:` line (the same guard the live bot uses), and
    the test counts how often each variant tried.
-4. Optional: my blind picks, `window` vs `full` on the rank page (`B-val-ctx-<variant>.jsonl`).
+4. **My blind picks,** `window` vs the best variant on the rank page (`B-val-ctx-<variant>.jsonl`).
+   Optional if a variant passes; this settles an UNSURE.
 
-**Decision:** if `tail` or `full` is no worse on loss and does not try to write other speakers much
-more than `window`, the live bot uses it as is (go to `LIVE_CLASS_PLAN.md`, phase 1). If worse, do
-the full-class retraining below.
+**Decision, fixed before seeing results.** The test prints PASS, FAIL or UNSURE per variant against the
+window. The limits come from earlier runs, so that chance differences can't decide it:
+
+| Measure | PASS | UNSURE | FAIL | Why this limit |
+| --- | --- | --- | --- | --- |
+| Loss vs window | All of the 95% interval below +0.015 | Interval crosses +0.015 | All of it above | B vs A differ by 0.029, so half of that |
+| My habits (further from my rate, interval above 0) | None | One | Two or more | Two runs of one model differ by up to about 5 "like"s per 1,000 |
+| Length vs window | Interval inside about 10% | Interval crosses it | All of it outside | Two runs of one model differ by about 6% |
+| Other speakers vs window | Interval below +2% of answers | Interval crosses it | All of it above | 0 of 1,236 answers on the trained prompt |
+
+The live bot uses the variant with the most class that passes, and the length table has to agree: a
+collapse over 8,192 tokens rules out `full` and `full-top` even if the average is fine.
+
+| tail | full | full-top | Meaning | Next |
+| --- | --- | --- | --- | --- |
+| Pass | Pass | Pass | The model handles the whole class | No retraining; `LIVE_CLASS_PLAN.md` phase 1 |
+| Pass | Fail | Pass | Placement was the problem | Use `full-top`; no retraining |
+| Pass | Fail | Fail | Length is the problem | Use the 2,500-token tail; retrain only if the bot needs the whole class |
+| Fail | any | any | Any added class hurts | The full-class retraining below |
 
 ## The pod
 
-- **GPU:** one **NVIDIA RTX Pro 6000, 96 GB** ($2.73/hour; about an hour, so about $3). Any 80 GB
-  H100 or A100 also works. Needs driver 580+ (CUDA 13); `setup.sh` checks. It is a Blackwell card:
-  if vLLM's default attention fails, `run_context_test.sh` retries with `VLLM_ATTENTION_BACKEND=TRITON_ATTN`.
+- **GPU:** one **NVIDIA RTX Pro 6000, 96 GB** ($2.73/hour; about 1.5 hours, so about $4, an estimate
+  until the quick pass shows real speeds). Any 80 GB H100 or A100 also works. Needs driver 580+ (CUDA
+  13); `setup.sh` checks. It is a Blackwell card (SM120): by vLLM's code it defaults to FlashAttention
+  2. If that won't run, `run_context_test.sh` retries with Triton attention, through `attention_config`
+  because vLLM 0.32 ignores the old `VLLM_ATTENTION_BACKEND` variable.
 - **Commands, from the Mac** (`HOST` and `PORT` from the provider; images log in as `ubuntu` or `root`):
 
 ```
 cd ~/ai_lab/experiments/minerva-gpt
-bash pod/push.sh HOST PORT                           # privacy gate, code from GitHub main, masked data incl. data/context
+CONTEXT_ONLY=1 bash pod/push.sh HOST PORT            # privacy gate (~6 min), code from GitHub main, validation data only (22 MB)
 ssh -p PORT HOST 'bash ~/minerva-gpt/pod/setup.sh'   # once on a fresh pod: driver check, both environments
-ssh -p PORT HOST 'cd ~/minerva-gpt && HF_TOKEN=$(cat) bash pod/run_context_test.sh' < ~/.cache/huggingface/token
-bash pod/pull.sh HOST PORT                           # results -> data/generations/7b/context-test.json
-ssh -p PORT HOST 'bash ~/minerva-gpt/pod/wipe.sh'    # then terminate the pod in the dashboard
+# The quick pass: download the model, checksum, vLLM vs plain Transformers, 30 answers end to end
+ssh -p PORT HOST 'cd ~/minerva-gpt && HF_TOKEN=$(cat) LIMIT=30 bash pod/run_context_test.sh' < ~/.cache/huggingface/token
+# The full run, in the background so a sleeping Mac can't kill it; no login needed any more
+ssh -p PORT HOST 'setsid nohup bash ~/minerva-gpt/pod/run_context_test.sh </dev/null >>~/context-test.log 2>&1 &'
+ssh -p PORT HOST 'tail -f ~/context-test.log'        # ends with "context test done" or "context test FAILED"; Ctrl-C only stops watching
+bash pod/pull.sh HOST PORT                           # results -> data/generations/7b/; compares checksums and says if it's not safe to wipe
+ssh -p PORT HOST 'bash ~/minerva-gpt/pod/wipe.sh'    # only after pull.sh says done; then terminate the pod in the dashboard
 ```
 
-`HOST` is `user@address` (for example `ubuntu@1.2.3.4`). `pod/README.md` has the full walkthrough.
+`HOST` is `user@address` (for example `ubuntu@1.2.3.4`). `pod/README.md` has the general walkthrough.
 
-`run_context_test.sh` downloads the merged model from the private repo (the HF login is piped in,
-never written on the pod), checks its SHA-256, then runs scoring and generation. `LIMIT=100` makes a
-quick first pass; `TAIL=` changes the middle variant. Results: `context-test.json` (a table is also
-printed) and the three `B-val-ctx-*.jsonl` files.
+**What protects the money and the result:**
+- **The crosscheck runs first.** vLLM has no OLMo 3 code of its own: it runs through its Transformers
+  wrapper, and this path has never run on prompts this long. So it scores 30 prompts both ways and
+  stops with exit 3 if they differ by more than 0.01 on average (for scale, the 8-bit copy and the
+  full model differ by 0.003), or by more than 0.005 in one direction. That holds separately for all
+  prompts, those over 4,096 tokens and those over 8,192. It also compares greedy answers on long
+  prompts, with vLLM's sampling settings and from its prefix cache. A control with the 4,096 limit
+  off shows how far off a vLLM that ignored the limit would be.
+- **A second check is free:** the window's losses are compared answer by answer with the plain
+  Transformers run saved in `runs/perrow-7b.jsonl` (spoken answers averaged 2.609).
+- **Longest prompts are scored first,** so running out of memory shows in minutes.
+- **A crash loses little:** scores are saved after every 64 answers and the main result before
+  generation starts. Rerun the same command and it picks up where it stopped.
 
-Untested parts, fix on the pod if they break: vLLM prompt log-probs on very long prompts (scoring
-runs in chunks of 64 with smaller prefill chunks) and the Blackwell attention backend. Everything
-else was dry-run on the Mac with a stand-in for vLLM.
+**Before the pod:** `uv run python smoke_context.py` tests the logic and every failure path with no GPU
+and no class data, against a stand-in for vLLM (`pod/fake_vllm`). It can't prove vLLM itself: only
+the crosscheck can, and the Blackwell attention backend also stays untested until then.
+
+Results: `context-test.json` (a table is also printed), `context-test-answers.jsonl`,
+`context-crosscheck.json`, `context-backend.txt` and the four `B-val-ctx-*.jsonl` files. The quick
+pass writes to `quick/` beside them, so it can't mix with the full run.
+
+**Earlier generations shared a seed.** Until this test, `vllm_sample.py` gave every prompt `seed=0`, so
+all answers got the same noise at each word position. Each answer was still a fair sample, but
+averages over answers (habit rates, length) were noisier than they looked, and the SPIN pairs and blind
+picks came from those runs. The MLX temperature test doesn't use this code and also found "like" at
+about 1.5x my rate, so that stands. Each prompt now gets its own seed.
 
 ## If the test says retrain: the full-class model
 
