@@ -4,7 +4,7 @@
 # Code = cloned on the pod from GitHub (public repo, branch $BRANCH, default main) into ~/ai_lab,
 # with ~/minerva-gpt linking to the experiment. It refuses if this folder differs from GitHub,
 # so the pod never runs code you haven't pushed. CODE=mac sends this Mac's files instead.
-# Data = data/sft, data/sft_classmates, data/transcripts and stats.json: masked, and only after
+# Data = data/sft, data/sft_classmates, data/transcripts, data/context and stats.json: masked, and only after
 # privacy_check.py passes. Once data/rankings.jsonl exists (the DPO session), the rankings,
 # the session-1 adapters and the scored samples go up too.
 # Never sent: raw CS156 data, the Forum cookie, any .env file.
@@ -20,8 +20,10 @@ CODE="${CODE:-github}"
 LIST="$(mktemp)"
 trap 'rm -f "$LIST"' EXIT
 
+CTX=""  # data/context: the class so far before each of my answers (eval_context.py), once built
+[ -d "$HERE/data/context" ] && CTX="data/context"
 echo "== privacy gate: nothing leaves the Mac unless it finds 0 definite name hits"
-(cd "$HERE" && uv run --project ~/cs156-ml python privacy_check.py data/sft data/sft_classmates \
+(cd "$HERE" && uv run --project ~/cs156-ml python privacy_check.py data/sft data/sft_classmates $CTX \
   2>/dev/null | grep "privacy scan")
 
 echo "== rsync and git on the pod (some images lack them)"
@@ -51,7 +53,7 @@ fi
 echo "== data (masked)"
 $SSH "$HOST" 'mkdir -p minerva-gpt/data'
 rsync -az -e "$SSH" "$HERE/data/sft" "$HERE/data/sft_classmates" "$HERE/data/transcripts" \
-  "$HERE/data/stats.json" "$HOST:minerva-gpt/data/"
+  ${CTX:+"$HERE/$CTX"} "$HERE/data/stats.json" "$HOST:minerva-gpt/data/"
 if [ -f "$HERE/data/rankings.jsonl" ]; then
   echo "== for DPO (session 2): my rankings, the session-1 adapters and scored samples"
   rsync -az -e "$SSH" "$HERE/data/rankings.jsonl" "$HOST:minerva-gpt/data/"

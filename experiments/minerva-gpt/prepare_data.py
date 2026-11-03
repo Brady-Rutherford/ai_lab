@@ -56,7 +56,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from common import DATA, ME, TAG_CLASSMATE, TAG_ME, write_jsonl
+from common import DATA, ME, TAG_CLASSMATE, TAG_ME, prompt_key, write_jsonl
 from names import mask_names
 
 SRC = Path(os.environ.get("CS156_DIR", "~/cs156-ml/pipeline1/data")).expanduser()
@@ -265,6 +265,19 @@ def render_class(info, date, turns):
     return "\n".join(out) + "\n"
 
 
+def class_so_far(turns, j):
+    """Everything said before turn j (the ask), as the window renders turns: activity markers and
+    `Who: text` lines, masked. For eval_context.py: the full-class prompt variants."""
+    out, segment = [], object()
+    for t in turns[:j]:
+        if t["segment"] != segment:
+            segment = t["segment"]
+            if segment:
+                out.append(f"[{segment}]")
+        out.append(f"{t['who']}: {t['text']}")
+    return "\n".join(out)
+
+
 def find_ask(turns, i):
     """Index of the professor turn that turn i answers: the latest question within the
     lookback, else the latest professor turn at all, else None (a student-only stretch)."""
@@ -304,7 +317,10 @@ def answer_examples(cid, info, turns, speaker, grades_by_turn, dropped):
         body = "\n".join([f"Professor: {ask}", *between, "", "What do you say?"])
         ctx = context(info, my_pcw=mine, at=t["start"])
         user = with_context(header(tag, "Class discussion", info, t["segment"]), ctx, body)
-        yield example(user, t["text"], "class_turn", speaker, cid, info, grades_by_turn.get(i, ()))
+        row = example(user, t["text"], "class_turn", speaker, cid, info, grades_by_turn.get(i, ()))
+        if mine:
+            row["_history"] = class_so_far(turns, j)  # split out to data/context/ when written
+        yield row
 
 
 def spoken_grades(cid, meta, info, turns, assessments, counts):
@@ -456,10 +472,14 @@ def main():
     stats = {"counts": dict(counts), "sft": {}, "sft_classmates": {}, "transcripts": {}}
     (args.out / "transcripts").mkdir(parents=True, exist_ok=True)
     for split in SPLITS.values():
+        histories = [{"id": prompt_key(r["prompt"]), "class_id": r["class_id"], "history": r.pop("_history")}
+                     for r in mine[split] if "_history" in r]
+        write_jsonl(args.out / f"context/{split}.jsonl", histories)
         write_jsonl(args.out / f"sft/{split}.jsonl", mine[split])
         write_jsonl(args.out / f"sft_classmates/{split}.jsonl", classmates[split])
         pd.DataFrame({"text": docs[split]}).to_parquet(args.out / f"transcripts/{split}.parquet")
         stats["transcripts"][split] = {"classes": len(docs[split])}
+        stats.setdefault("context", {})[split] = {"answers": len(histories)}
         for name, rows in (("sft", mine[split]), ("sft_classmates", classmates[split])):
             by_source = defaultdict(lambda: {"examples": 0, "graded": 0, "answer_words": 0})
             for row in rows:

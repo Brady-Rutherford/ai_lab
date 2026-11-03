@@ -29,6 +29,8 @@ def redact(term):
 
 
 def fields(row):
+    if "history" in row:  # data/context/: the class so far before one of my answers
+        return (("prompt", row["history"]),)
     head, _, body = row["prompt"][0]["content"].partition("\n\n")
     return (("header", head), ("prompt", body), ("answer", row["completion"][0]["content"]))
 

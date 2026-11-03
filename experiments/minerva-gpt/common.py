@@ -3,6 +3,7 @@
 Standard library only, so prepare_data.py (run in the CS156 environment) can import it too.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -54,6 +55,11 @@ GRADE_BONUS_Z = 0.5  # my examples graded this far above that grader's mean get 
 def read_jsonl(path):
     with open(path) as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+def prompt_key(prompt):
+    """The id of each ask, everywhere (generate.py, data/context/): 12 hex of its prompt's sha1."""
+    return hashlib.sha1(prompt[0]["content"].encode()).hexdigest()[:12]
 
 
 def write_jsonl(path, rows):
