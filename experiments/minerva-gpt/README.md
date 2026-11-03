@@ -113,7 +113,7 @@ Move data by rsync over SSH, use no persistent volumes, and terminate the box af
 
 ## Planned
 
-- **Context test (next pod run):** does the trained model answer as well with the class so far in
+- **Context test (next pod run; handoff in [NEXT_SESSION.md](NEXT_SESSION.md)):** does the trained model answer as well with the class so far in
   its prompt? `eval_context.py` compares the trained window against the window plus the last ~4,000
   tokens of the class and plus the whole class, on the held-out spoken answers. Build the data with
   `prepare_data.py` (it now writes `data/context/`), `pod/push.sh`, then on the pod
