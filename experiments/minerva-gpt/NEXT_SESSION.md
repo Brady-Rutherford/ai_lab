@@ -9,6 +9,9 @@ help me with the next step."* Everything needed is here or linked.
 pre-class work, poll on screen), then `Class so far:` with everything said up to that moment, then the
 ask and replies.** The weights don't change. This is about what goes in the prompt.
 
+**Pre-class work: include all of it by default (`full-pcw`), and keep this flexible.** It's a setting, not a
+fixed rule. The test found all of it and the first 300 words about even, so either is fine to use.
+
 **Every number and comparison is in [CONTEXT_TEST_RESULTS.md](CONTEXT_TEST_RESULTS.md).** The raw results (answers, per-answer scores, picks) stay on the Mac, gitignored, in `data/generations/7b/`, `data/judge-context/` and `runs/context-test-3nov/`.
 
 The test ran on an RTX Pro 6000 on 3-4 Nov: 618 held-out spoken answers from 84 classes. vLLM matched
@@ -45,8 +48,10 @@ question; 299 prompts changed.
   `full-top` is -0.013 with pre-class work and -0.012 without (not randomly assigned, so strong support
   rather than proof).
 - **Whole pre-class work made no measurable difference:** -0.0012 on loss vs `full` where the text changed
-  (95% -0.0028 to +0.0001), and answer length within noise. It costs a median of 239 tokens, so it's
-  optional. This doesn't show what pre-class work adds in itself: no version removed it.
+  (95% -0.0028 to +0.0001), and answer length within noise. It costs a median of 239 tokens. All of it is
+  the default because that's what I'd have in mind when speaking, not because it scored better, and it stays
+  flexible. Watch "yeah / yep" in the replay (14.0 vs 9.1 per 1,000 words where the text changed, against my
+  7.6; the interval crosses zero). This doesn't show what pre-class work adds in itself: no version removed it.
 
 **Accepted or still open:**
 - **`full` is UNSURE on length only.** Answers run longer than mine (median 75 words vs 55), mostly because

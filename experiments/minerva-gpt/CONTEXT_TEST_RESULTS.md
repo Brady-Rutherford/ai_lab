@@ -31,7 +31,7 @@ The rule was fixed before seeing results: see NEXT_SESSION.md. Limits against th
 | `full-tag` | FAIL | answer length moved more than about 10% |
 | `full-pcw` | UNSURE | answer length may have moved more than about 10% |
 
-**Decision: `full`.** It has the best loss of the first five versions at every prompt length, and `full-pcw` matches it within noise. Its open issue, answer length, is accepted for now. A stop boost to shorten answers was considered and declined.
+**Decision: `full`.** It has the best loss of the first five versions at every prompt length, and `full-pcw` matches it within noise. Its open issue, answer length, is accepted for now. A stop boost to shorten answers was considered and declined. By default the bot also includes all my pre-class work (`full-pcw`). That stays flexible: a setting, not a fixed rule, since the two came out about even.
 
 ## Is vLLM right on long prompts?
 
@@ -200,7 +200,7 @@ For scale: models A and B differ by 0.029, and the decision limit was +0.015.
 | added 50-299 words | 111 (14) | +0.0002 | -0.002 to +0.002 |
 | added 300+ words | 138 (16) | -0.0027 | -0.005 to -0.000 |
 
-No measurable difference: at most a very small gain where the most text was added. It costs a median of 239 tokens. No version removed pre-class work, so this doesn't show what it adds in itself. On long prompts the extra text reaches only the 8 full layers.
+No measurable difference: at most a very small gain where the most text was added. It costs a median of 239 tokens. All of it is the default on reasoning rather than score, and it stays flexible. No version removed pre-class work, so this doesn't show what it adds in itself. On long prompts the extra text reaches only the 8 full layers.
 
 ## Blind picks
 

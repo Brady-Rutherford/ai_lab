@@ -114,7 +114,7 @@ Move data by rsync over SSH, use no persistent volumes, and terminate the box af
 ## Context test (done, 4 Nov 2026)
 
 Does the trained model answer as well, and still sound like me, with the class so far in its prompt?
-**Yes: use the whole class (`full`), with no retraining.** `eval_context.py` compared the trained window
+**Yes: use the whole class (`full`), with no retraining,** and all my pre-class work by default (a flexible setting). `eval_context.py` compared the trained window
 with the last ~2,500 tokens of the class, the whole class before the ask, and the whole class at the very
 top, on 618 held-out spoken answers. The whole class had the best loss at every prompt length (-0.095 vs
 the trained window). Its answers run somewhat longer than mine, which is accepted for now. All the numbers are in
