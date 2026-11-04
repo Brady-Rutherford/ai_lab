@@ -1,6 +1,6 @@
 # Next session: the context test is done, build on `full` (handoff, 4 Nov 2026)
 
-Start a new chat with: *"Read `experiments/minerva-gpt/NEXT_SESSION.md` and `LIVE_CLASS_PLAN.md`, then
+Start a new chat with: *"Read `experiments/brady-gpt/NEXT_SESSION.md` and `LIVE_CLASS_PLAN.md`, then
 help me with the next step."* Everything needed is here or linked.
 
 ## Decision (4 Nov 2026): use `full`, no retraining
@@ -21,7 +21,7 @@ plain Transformers on long prompts (average gap 0.0025, and 0.0022 over 8,192 to
 | | `window` (control) | `tail` | **`full`** | `full-top` | `full-tag` | `full-pcw` | Me |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Verdict | | PASS | **UNSURE** | FAIL | FAIL | UNSURE | |
-| Loss on my answer | 2.609 | 2.528 | **2.514** | 2.525 | 2.537 | 2.514 | |
+| Loss on my answer | 2.609 | 2.528 | **2.515** | 2.525 | 2.537 | 2.514 | |
 | vs window | | -0.081 | **-0.095** | -0.084 | -0.072 | -0.095 | |
 | vs window, over 8,192 tokens | | -0.074 | **-0.092** | -0.081 | -0.065 | | |
 | Length vs window | | 1.02x | 1.12x | 0.90x | 1.21x | 1.07x | |
@@ -153,16 +153,16 @@ collapse over 8,192 tokens rules out `full` and `full-top` even if the average i
 - **Commands, from the Mac** (`HOST` and `PORT` from the provider; images log in as `ubuntu` or `root`):
 
 ```
-cd ~/ai_lab/experiments/minerva-gpt
+cd ~/ai_lab/experiments/brady-gpt
 CONTEXT_ONLY=1 bash pod/push.sh HOST PORT            # privacy gate (~6 min), code from GitHub main, validation data only (22 MB)
-ssh -p PORT HOST 'bash ~/minerva-gpt/pod/setup.sh'   # once on a fresh pod: driver check, both environments
+ssh -p PORT HOST 'bash ~/brady-gpt/pod/setup.sh'   # once on a fresh pod: driver check, both environments
 # The quick pass: download the model, checksum, vLLM vs plain Transformers, 30 answers end to end
-ssh -p PORT HOST 'cd ~/minerva-gpt && HF_TOKEN=$(cat) LIMIT=30 bash pod/run_context_test.sh' < ~/.cache/huggingface/token
+ssh -p PORT HOST 'cd ~/brady-gpt && HF_TOKEN=$(cat) LIMIT=30 bash pod/run_context_test.sh' < ~/.cache/huggingface/token
 # The full run, in the background so a sleeping Mac can't kill it; no login needed any more
-ssh -p PORT HOST 'setsid nohup bash ~/minerva-gpt/pod/run_context_test.sh </dev/null >>~/context-test.log 2>&1 &'
+ssh -p PORT HOST 'setsid nohup bash ~/brady-gpt/pod/run_context_test.sh </dev/null >>~/context-test.log 2>&1 &'
 ssh -p PORT HOST 'tail -f ~/context-test.log'        # ends with "context test done" or "context test FAILED"; Ctrl-C only stops watching
 bash pod/pull.sh HOST PORT                           # results -> data/generations/7b/; compares checksums and says if it's not safe to wipe
-ssh -p PORT HOST 'bash ~/minerva-gpt/pod/wipe.sh'    # only after pull.sh says done; then terminate the pod in the dashboard
+ssh -p PORT HOST 'bash ~/brady-gpt/pod/wipe.sh'    # only after pull.sh says done; then terminate the pod in the dashboard
 ```
 
 `HOST` is `user@address` (for example `ubuntu@1.2.3.4`). `pod/README.md` has the general walkthrough.

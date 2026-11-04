@@ -230,7 +230,7 @@ def shims(bin_dir):
 
 def new_pod(sy, name, model):
     home = sy / name
-    code = home / "minerva-gpt"
+    code = home / "brady-gpt"
     code.mkdir(parents=True)
     for f in HERE.glob("*.py"):
         shutil.copy(f, code)
@@ -256,8 +256,8 @@ def pod_scripts(sy, model, env):
         return e
 
     home = new_pod(sy, "pod-a", model)
-    out, log = home / "minerva-gpt/data/generations/7b", home / "fake.log"
-    r = run(["bash", "minerva-gpt/pod/run_context_test.sh"], script(home, LIMIT="12", FAKE_VLLM_REQUIRE_BACKEND="TRITON_ATTN", FAKE_VLLM_LOG=str(log)),
+    out, log = home / "brady-gpt/data/generations/7b", home / "fake.log"
+    r = run(["bash", "brady-gpt/pod/run_context_test.sh"], script(home, LIMIT="12", FAKE_VLLM_REQUIRE_BACKEND="TRITON_ATTN", FAKE_VLLM_LOG=str(log)),
             "the default backend failing falls back to Triton, and the quick pass finishes")
     text = r.stdout + r.stderr
     check("the fallback really asks vLLM for Triton", {c["backend"] for c in calls(log)} >= {"TRITON_ATTN"}, str({c["backend"] for c in calls(log)}))
@@ -267,25 +267,25 @@ def pod_scripts(sy, model, env):
     check("a finished run leaves no marker", not (out / "context-test.running").exists())
     check("the login is dropped before the run starts", calls(log) and not any(c["hf_token"] for c in calls(log)))
 
-    r = run(["bash", "minerva-gpt/pod/run_context_test.sh"], script(home, FAKE_VLLM_REQUIRE_BACKEND="TRITON_ATTN", HF_TOKEN=""), "a full run after it needs no login and reuses the backend")
+    r = run(["bash", "brady-gpt/pod/run_context_test.sh"], script(home, FAKE_VLLM_REQUIRE_BACKEND="TRITON_ATTN", HF_TOKEN=""), "a full run after it needs no login and reuses the backend")
     check("it skips the crosscheck", "is vLLM right" not in r.stdout)
     check("it runs every answer", json.loads((out / "context-test.json").read_text())["answers"] == 30)
 
     home = new_pod(sy, "pod-b", model)
-    r = run(["bash", "minerva-gpt/pod/run_context_test.sh"], script(home, FAKE_VLLM_NO_WINDOW="1"), "vLLM disagreeing stops the run with exit 3", expect=3)
+    r = run(["bash", "brady-gpt/pod/run_context_test.sh"], script(home, FAKE_VLLM_NO_WINDOW="1"), "vLLM disagreeing stops the run with exit 3", expect=3)
     check("no fallback was tried, since the backend ran fine", "trying TRITON" not in r.stdout)
     check("the failure is stated", "context test FAILED" in r.stdout)
-    check("no test ran", not (home / "minerva-gpt/data/generations/7b/context-test.json").exists())
-    check("the failed run stays marked as unfinished", (home / "minerva-gpt/data/generations/7b/context-test.running").exists())
+    check("no test ran", not (home / "brady-gpt/data/generations/7b/context-test.json").exists())
+    check("the failed run stays marked as unfinished", (home / "brady-gpt/data/generations/7b/context-test.running").exists())
 
     home = new_pod(sy, "pod-c", model)
-    r = run(["bash", "minerva-gpt/pod/run_context_test.sh"], script(home, MODEL_SHA="0" * 64), "a wrong checksum stops the run before anything else", expect=1)
-    check("and scores nothing", not (home / "minerva-gpt/data/generations/7b").exists())
+    r = run(["bash", "brady-gpt/pod/run_context_test.sh"], script(home, MODEL_SHA="0" * 64), "a wrong checksum stops the run before anything else", expect=1)
+    check("and scores nothing", not (home / "brady-gpt/data/generations/7b").exists())
 
     print("== the background launch, exactly as NEXT_SESSION.md gives it")
     home = new_pod(sy, "pod-d", model)
     e = script(home, FAKE_POD_HOME=str(home), LIMIT="6", HF_TOKEN="")
-    launch = "setsid nohup bash ~/minerva-gpt/pod/run_context_test.sh </dev/null >>~/context-test.log 2>&1 &"
+    launch = "setsid nohup bash ~/brady-gpt/pod/run_context_test.sh </dev/null >>~/context-test.log 2>&1 &"
     start = time.time()
     # Held by pipes, as real ssh holds its channel: this waits if anything keeps them open.
     subprocess.run(["ssh", "-p", "22", "user@pod", launch], env=e, check=True, timeout=30, capture_output=True, stdin=subprocess.DEVNULL)
@@ -306,7 +306,7 @@ def pod_scripts(sy, model, env):
     r = run(["bash", "pod/pull.sh", "user@pod", "22"], e2, "a pod with no checkpoints still pulls")
     check("the results arrived", (mac / "data/generations/7b/quick/context-test.json").exists())
     check("it says wiping is fine", "done. Then" in r.stdout)
-    pod_out = home / "minerva-gpt/data/generations/7b"
+    pod_out = home / "brady-gpt/data/generations/7b"
     bad = sy / "bin-bad"
     bad.mkdir()
     (bad / "rsync").write_text("#!/bin/sh\nexit 1\n")
@@ -330,7 +330,7 @@ def pod_scripts(sy, model, env):
     r = run(["bash", "pod/pull.sh", "user@pod", "22"], e2, "an unfinished run stops pull.sh", expect=1)
     check("and says the test hasn't finished", "still running or failed" in r.stdout)
     (pod_out / "context-test.running").unlink()
-    ckpt = home / "minerva-gpt/checkpoints/7b"
+    ckpt = home / "brady-gpt/checkpoints/7b"
     ckpt.mkdir(parents=True)
     (ckpt / "adapter.bin").write_text("x")
     run(["bash", "pod/pull.sh", "user@pod", "22"], e2, "a pod with checkpoints still pulls them")

@@ -1121,7 +1121,7 @@ wheels = [
 ]
 
 [[package]]
-name = "minerva-gpt"
+name = "brady-gpt"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

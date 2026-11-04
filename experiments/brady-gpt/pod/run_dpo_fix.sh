@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # On the POD, after run_v2.sh: redo only the DPO step, with the length fix, for the 1B and 7B
-# models whose SFT adapters run_v2.sh already trained. Logs to ~/minerva.log.
-#   tmux new -s dpofix; bash ~/minerva-gpt/pod/run_dpo_fix.sh
+# models whose SFT adapters run_v2.sh already trained. Logs to ~/brady-gpt.log.
+#   tmux new -s dpofix; bash ~/brady-gpt/pod/run_dpo_fix.sh
 # Session 2 found DPO pushing answers from 75 to 191 words (66% cut off at the cap): cut-off
 # model answers ended with eos in the pairs, so "stopping" was marked as losing. The fix: sample
 # with finish flags, skip cut-off answers in the SPIN pairs, and add an SFT loss on my real
@@ -10,7 +10,7 @@
 # names the outputs (checkpoints/<size>/<TAG>-A, final-<TAG>-A, <variant>-val-<TAG>.jsonl).
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
-cd "$HOME/minerva-gpt"
+cd "$HOME/brady-gpt"
 SIZES="${SIZES:-1b 7b}"
 VARIANTS="${VARIANTS:-A B}"
 DPO_FLAGS="${DPO_FLAGS:-}"
@@ -22,8 +22,8 @@ dpo_lr_of() { [ "$1" = 7b ] && echo 2.5e-5 || echo 5e-5; }
 
 {
   for label in $SIZES; do
-    export MINERVA_BASE_MODEL="$(base_of "$label")" MINERVA_CHECKPOINTS="checkpoints/$label"
-    C="$MINERVA_CHECKPOINTS" G="data/generations/$label"
+    export BRADY_GPT_BASE_MODEL="$(base_of "$label")" BRADY_GPT_CHECKPOINTS="checkpoints/$label"
+    C="$BRADY_GPT_CHECKPOINTS" G="data/generations/$label"
     for v in $VARIANTS; do
       [ -d "$C/sft-$v" ] || { step "[$label] no $C/sft-$v, skipping"; continue; }
       if [ ! -f "$G/$v-train-v2.jsonl" ]; then
@@ -49,4 +49,4 @@ dpo_lr_of() { [ "$1" = 7b ] && echo 2.5e-5 || echo 5e-5; }
   done
   step "DPO [$TAG] done.${FAILED:+ Failed:$FAILED}"
   [ -z "$FAILED" ]
-} 2>&1 | tee -a "$HOME/minerva.log"
+} 2>&1 | tee -a "$HOME/brady-gpt.log"

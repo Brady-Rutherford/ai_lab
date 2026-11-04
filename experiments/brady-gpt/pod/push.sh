@@ -2,7 +2,7 @@
 # On the MAC: get the code onto the pod and copy the masked training data to it.
 #   bash pod/push.sh root@HOST [PORT] [SSH_KEY]
 # Code = cloned on the pod from GitHub (public repo, branch $BRANCH, default main) into ~/ai_lab,
-# with ~/minerva-gpt linking to the experiment. It refuses if this folder differs from GitHub,
+# with ~/brady-gpt linking to the experiment. It refuses if this folder differs from GitHub,
 # so the pod never runs code you haven't pushed. CODE=mac sends this Mac's files instead.
 # Data = data/sft, data/sft_classmates, data/transcripts, data/context and stats.json: masked, and only after
 # privacy_check.py passes. Once data/rankings.jsonl exists (the DPO session), the rankings,
@@ -45,32 +45,32 @@ if [ "$CODE" = github ]; then
   fi
   $SSH "$HOST" "if [ -d ai_lab/.git ]; then git -C ai_lab fetch -q origin $BRANCH && git -C ai_lab checkout -q $BRANCH \
       && git -C ai_lab reset -q --hard origin/$BRANCH; else git clone -q --branch $BRANCH $REPO ai_lab; fi \
-    && ln -sfn ~/ai_lab/experiments/minerva-gpt ~/minerva-gpt && git -C ai_lab log --oneline -1"
+    && ln -sfn ~/ai_lab/experiments/brady-gpt ~/brady-gpt && git -C ai_lab log --oneline -1"
 else
   echo "== code: this Mac's files"
   (cd "$HERE" && git ls-files -co --exclude-standard . | grep -v -E '(^|/)\.env') > "$LIST"
-  rsync -az --files-from="$LIST" -e "$SSH" "$HERE/" "$HOST:minerva-gpt/"
+  rsync -az --files-from="$LIST" -e "$SSH" "$HERE/" "$HOST:brady-gpt/"
 fi
 
 if [ -n "${CONTEXT_ONLY:-}" ]; then
   [ -n "$CTX" ] || { echo "!! no data/context: run prepare_data.py first"; exit 1; }
   echo "== data (masked): only what the context test reads"
-  $SSH "$HOST" 'mkdir -p minerva-gpt/data/sft minerva-gpt/data/context minerva-gpt/runs'
-  rsync -az -e "$SSH" "$HERE/data/sft/val.jsonl" "$HOST:minerva-gpt/data/sft/"
-  rsync -az -e "$SSH" "$HERE/data/context/val.jsonl" "$HOST:minerva-gpt/data/context/"
-  [ ! -f "$HERE/runs/perrow-7b.jsonl" ] || rsync -az -e "$SSH" "$HERE/runs/perrow-7b.jsonl" "$HOST:minerva-gpt/runs/"
-  echo "done. Next, on the pod: bash ~/minerva-gpt/pod/setup.sh"
+  $SSH "$HOST" 'mkdir -p brady-gpt/data/sft brady-gpt/data/context brady-gpt/runs'
+  rsync -az -e "$SSH" "$HERE/data/sft/val.jsonl" "$HOST:brady-gpt/data/sft/"
+  rsync -az -e "$SSH" "$HERE/data/context/val.jsonl" "$HOST:brady-gpt/data/context/"
+  [ ! -f "$HERE/runs/perrow-7b.jsonl" ] || rsync -az -e "$SSH" "$HERE/runs/perrow-7b.jsonl" "$HOST:brady-gpt/runs/"
+  echo "done. Next, on the pod: bash ~/brady-gpt/pod/setup.sh"
   exit 0
 fi
 
 echo "== data (masked)"
-$SSH "$HOST" 'mkdir -p minerva-gpt/data'
+$SSH "$HOST" 'mkdir -p brady-gpt/data'
 rsync -az -e "$SSH" "$HERE/data/sft" "$HERE/data/sft_classmates" "$HERE/data/transcripts" \
-  ${CTX:+"$HERE/$CTX"} "$HERE/data/stats.json" "$HOST:minerva-gpt/data/"
+  ${CTX:+"$HERE/$CTX"} "$HERE/data/stats.json" "$HOST:brady-gpt/data/"
 if [ -f "$HERE/data/rankings.jsonl" ]; then
   echo "== for DPO (session 2): my rankings, the session-1 adapters and scored samples"
-  rsync -az -e "$SSH" "$HERE/data/rankings.jsonl" "$HOST:minerva-gpt/data/"
-  rsync -az --exclude 'context-*' -e "$SSH" "$HERE/data/generations" "$HOST:minerva-gpt/data/"
-  rsync -az --exclude 'checkpoint-*' -e "$SSH" "$HERE/checkpoints" "$HOST:minerva-gpt/"
+  rsync -az -e "$SSH" "$HERE/data/rankings.jsonl" "$HOST:brady-gpt/data/"
+  rsync -az --exclude 'context-*' -e "$SSH" "$HERE/data/generations" "$HOST:brady-gpt/data/"
+  rsync -az --exclude 'checkpoint-*' -e "$SSH" "$HERE/checkpoints" "$HOST:brady-gpt/"
 fi
-echo "done. Next, on the pod: bash ~/minerva-gpt/pod/setup.sh"
+echo "done. Next, on the pod: bash ~/brady-gpt/pod/setup.sh"

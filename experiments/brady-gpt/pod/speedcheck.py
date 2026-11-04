@@ -1,6 +1,6 @@
 """On the POD: prove the fast path changes speed, not results, before any real run uses it.
 
-    cd ~/minerva-gpt && uv run python pod/speedcheck.py
+    cd ~/brady-gpt && uv run python pod/speedcheck.py
 
 Fast path = FlashAttention 3 (prebuilt kernel) + packing + Liger kernels. Two checks:
 1. Isolation. Packing puts several examples in one row, and only FlashAttention's

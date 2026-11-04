@@ -1,6 +1,6 @@
 """On the POD, after setup.sh: check everything a run needs, before any GPU time is spent on it.
 
-    cd ~/minerva-gpt && uv run python pod/preflight.py
+    cd ~/brady-gpt && uv run python pod/preflight.py
 
 Must print "all passed". Then, to see the whole pipeline work on this GPU with fake data
 (a few minutes): GEN_ENGINE=vllm sh smoke_test.sh

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # On the POD, once: system tools, uv, two Python environments and the base model.
-#   bash ~/minerva-gpt/pod/setup.sh
+#   bash ~/brady-gpt/pod/setup.sh
 #
 # Two environments, because vLLM 0.32 pins torch 2.13 and transformers < 5.20 while training
 # uses torch 2.14 and transformers 5.21 (uv.lock). Putting vLLM into the training environment
 # would downgrade both under TRL; apart, neither can break the other.
-#   ~/minerva-gpt/.venv   training, scoring, evals (uv.lock, exactly what the Mac ran)
+#   ~/brady-gpt/.venv   training, scoring, evals (uv.lock, exactly what the Mac ran)
 #   ~/vllm-env            vLLM only, for sampling (generate.py --engine vllm)
 # Both read the same base model from the Hugging Face cache.
 set -euo pipefail
@@ -28,7 +28,7 @@ $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tmux rsync curl 
 echo "== uv"
 command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
-cd "$HOME/minerva-gpt"
+cd "$HOME/brady-gpt"
 
 echo "== training environment (uv.lock + the gpu extra: kernels, liger-kernel; Python 3.12)"
 uv sync --frozen --python 3.12 --extra gpu \
@@ -51,4 +51,4 @@ get_kernel('kernels-community/vllm-flash-attn3', version=1); print('FA3 kernel c
 echo "== GPU"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 echo "$(nproc) cores, $(free -g | awk '/Mem:/{print $2}') GB RAM, $(df -h ~ | awk 'NR==2{print $4}') disk free"
-echo "done. Next: cd ~/minerva-gpt && uv run python pod/preflight.py && uv run python pod/speedcheck.py"
+echo "done. Next: cd ~/brady-gpt && uv run python pod/preflight.py && uv run python pod/speedcheck.py"

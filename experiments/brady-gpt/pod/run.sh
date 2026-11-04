@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # On the POD, session 1: SFT both variants, check the voice score and the grade model, sample
-# answers for me to rank (vLLM), score them, and run the regurgitation test. Logs to ~/minerva.log.
-#   tmux new -s minerva          (detach: Ctrl-b then d; come back: tmux attach -t minerva)
-#   bash ~/minerva-gpt/pod/run.sh
+# answers for me to rank (vLLM), score them, and run the regurgitation test. Logs to ~/brady-gpt.log.
+#   tmux new -s brady-gpt          (detach: Ctrl-b then d; come back: tmux attach -t brady-gpt)
+#   bash ~/brady-gpt/pod/run.sh
 # Same code path as the Mac smoke test (sdpa attention, no packing); a big GPU just runs it with
 # bigger batches and without gradient checkpointing, which changes speed, not results.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
-cd "$HOME/minerva-gpt"
+cd "$HOME/brady-gpt"
 BATCH="${BATCH:-8}"
 # The fast path (FlashAttention 3 + packing + Liger) only if pod/speedcheck.py proved on this
 # pod that it changes speed and not results; it writes the flags to ~/fast_flags.
@@ -45,4 +45,4 @@ step() { echo; echo "== $(date +%H:%M:%S) $*"; }
     || echo "!! REGURGITATION HITS above: do not use those samples until we look at them"
 
   step "session 1 done. On the Mac: bash pod/pull.sh HOST PORT"
-} 2>&1 | tee -a "$HOME/minerva.log"
+} 2>&1 | tee -a "$HOME/brady-gpt.log"

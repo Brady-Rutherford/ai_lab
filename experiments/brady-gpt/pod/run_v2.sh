@@ -2,14 +2,14 @@
 # On the POD, session 2: retrain with the class context (readings, my pre-class work, the poll on
 # screen), then DPO on SPIN pairs (my real answer vs the model's), for each variant. First on
 # OLMo 2 1B; then, only if its memorization and regurgitation checks pass, on OLMo 3 7B.
-# Logs to ~/minerva.log.
-#   tmux new -s minerva          (detach: Ctrl-b then d; come back: tmux attach -t minerva)
-#   bash ~/minerva-gpt/pod/run_v2.sh
+# Logs to ~/brady-gpt.log.
+#   tmux new -s brady-gpt          (detach: Ctrl-b then d; come back: tmux attach -t brady-gpt)
+#   bash ~/brady-gpt/pod/run_v2.sh
 # VARIANTS="A" limits it to one variant; SKIP_7B=1 stops after the 1B; START_AT=7b skips the
 # 1B (after its checks were reviewed by hand, or redone with pod/run_dpo_fix.sh).
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
-cd "$HOME/minerva-gpt"
+cd "$HOME/brady-gpt"
 VARIANTS="${VARIANTS:-A B}"
 START_AT="${START_AT:-1b}"
 DPO="${DPO:-1}"  # DPO=0: SFT only; answers to rank come from the SFT model
@@ -26,8 +26,8 @@ step() { echo; echo "== $(date +%H:%M:%S) $*"; }
 # label, base model, SFT lr, DPO lr, batch per pass, extra SFT flags
 one_model() {
   local label=$1 base=$2 sft_lr=$3 dpo_lr=$4 batch=$5 sft_flags=$6
-  export MINERVA_BASE_MODEL="$base" MINERVA_CHECKPOINTS="checkpoints/$label"
-  local C="$MINERVA_CHECKPOINTS" G="data/generations/$label"
+  export BRADY_GPT_BASE_MODEL="$base" BRADY_GPT_CHECKPOINTS="checkpoints/$label"
+  local C="$BRADY_GPT_CHECKPOINTS" G="data/generations/$label"
   mkdir -p "$G"
   for v in $VARIANTS; do
     step "[$label] SFT $v with class context"
@@ -75,11 +75,11 @@ one_model() {
     uv run python download_model.py "$BIG"
     # the same sampler setting and sampling parameters as vllm_sample.py: vLLM's default
     # sampling takes a FlashInfer path that JIT-compiles and needs ninja, which the pipeline never uses
-    VLLM_USE_FLASHINFER_SAMPLER=0 MINERVA_BASE_MODEL="$BIG" "$HOME/vllm-env/bin/python" -c \
+    VLLM_USE_FLASHINFER_SAMPLER=0 BRADY_GPT_BASE_MODEL="$BIG" "$HOME/vllm-env/bin/python" -c \
       "import common; from vllm import LLM, SamplingParams; LLM(common.BASE_MODEL, max_model_len=2048).generate('Hello', SamplingParams(temperature=0.8, top_p=0.95, max_tokens=8, seed=0)); print('vLLM serves', common.BASE_MODEL)"
     # 7B: a lower learning rate; the H200 has the memory to skip gradient checkpointing
     one_model 7b "$BIG" 1e-4 2.5e-5 "$BATCH_7B" "--no-checkpointing"
     [ -n "$FAILED" ] && step "7B checks failed:$FAILED"
   fi
   step "session 2 done. On the Mac: bash pod/pull.sh HOST PORT"
-} 2>&1 | tee -a "$HOME/minerva.log"
+} 2>&1 | tee -a "$HOME/brady-gpt.log"
