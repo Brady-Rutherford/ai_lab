@@ -120,6 +120,12 @@ top, on 618 held-out spoken answers. The whole class had the best loss at every 
 the trained window). Its answers run somewhat longer than mine, which is accepted for now. All the numbers are in
 [CONTEXT_TEST_RESULTS.md](CONTEXT_TEST_RESULTS.md), and the decision is in [NEXT_SESSION.md](NEXT_SESSION.md). `uv run python smoke_context.py` tests the code without a GPU.
 
+## Live demo (Colab)
+
+[`demo/minerva_live.ipynb`](demo/minerva_live.ipynb) shows how the model was trained, compares it with the base model and a Botnik-style predictive keyboard, replays five class moments, and answers live questions. [Open it in Colab](https://colab.research.google.com/github/Brady-Rutherford/ai_lab/blob/main/experiments/minerva-gpt/demo/minerva_live.ipynb).
+
+It needs a T4 GPU, my Hugging Face login as the Colab secret `HF_TOKEN`, and `data/demo/demo_data.json`, which `demo/make_demo_data.py` builds on my Mac and which never goes on GitHub. The notebook is saved without outputs, so no class text reaches this repo.
+
 ## Planned
 
 - **A live class:** the model takes part in one online CS156 session as me, with the professor's

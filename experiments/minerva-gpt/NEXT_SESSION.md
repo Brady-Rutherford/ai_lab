@@ -21,7 +21,7 @@ plain Transformers on long prompts (average gap 0.0025, and 0.0022 over 8,192 to
 | | `window` (control) | `tail` | **`full`** | `full-top` | `full-tag` | `full-pcw` | Me |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Verdict | | PASS | **UNSURE** | FAIL | FAIL | UNSURE | |
-| Loss on my answer | 2.609 | 2.528 | **2.514** | 2.525 | 2.537 | 2.514 | |
+| Loss on my answer | 2.609 | 2.528 | **2.515** | 2.525 | 2.537 | 2.514 | |
 | vs window | | -0.081 | **-0.095** | -0.084 | -0.072 | -0.095 | |
 | vs window, over 8,192 tokens | | -0.074 | **-0.092** | -0.081 | -0.065 | | |
 | Length vs window | | 1.02x | 1.12x | 0.90x | 1.21x | 1.07x | |
