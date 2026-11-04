@@ -65,10 +65,14 @@ With the context cached, the first word should come about 1 s after a question e
 
 1. **Ears.** Forum audio → BlackHole → Deepgram streaming (no-retention API). Diarized speakers
    map to roles; the one who talks most is the professor.
-2. **Context, exactly as in training.** Before class, fetch the session header, focused LOs/HCs,
-   readings and my pre-class work with the existing Forum harvester. Live: the professor's latest
-   ask plus the replies since, under the same word budgets as `prepare_data.py`. Never the whole
-   transcript: the model learned from prompts under 2,048 tokens.
+2. **Context: the `full` prompt (decided 4 Nov 2026; results in `NEXT_SESSION.md`).** Before class, fetch
+   the session header, focused LOs/HCs, readings and my pre-class work with the existing Forum
+   harvester. Live: a `Class so far:` block with everything said up to that moment, then the
+   professor's latest ask plus the replies since, under the same word budgets as `prepare_data.py`.
+   The model was trained on short prompts, but the context test found the whole class predicts my
+   answers better at every length, with no retraining. Keep this exact layout: moving the class or
+   adding lines changed the results. Pre-class work: all of it by default instead of the first 300
+   words, as a setting that can change, since the test found the two about even.
 3. **Brain.** Prompts go to vLLM as the same token ids as training (`generate.prompt_ids`).
    Drafting starts the moment the professor finishes a question, so an answer is always ready.
 4. **When to speak.** v1: only after open questions, capped at my own rate (about 6 raises per
@@ -107,6 +111,9 @@ With the context cached, the first word should come about 1 s after a question e
 ## Known risks
 
 - Without class context the model can drift or loop; live prompts must always carry the class.
+- `full` prompts reach about 19,000 tokens by the end of a class. How much vLLM's prefix cache saves at
+  that length, and the first-word delay, are unmeasured: check both in the replay phase.
+- `full` answers run longer than mine (median 75 words vs 55), and "like" and "I think" stay too high.
 - It states made-up facts about me with confidence; keep it to class discussion.
 - Speaker roles from diarization can be wrong when the professor speaks briefly.
 - A weak hand-raise model means odd timing: rules and caps come first, the model second.

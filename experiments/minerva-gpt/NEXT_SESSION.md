@@ -1,7 +1,76 @@
-# Next session: run the context test (handoff, 3 Nov 2026)
+# Next session: the context test is done, build on `full` (handoff, 4 Nov 2026)
 
-Start a new chat with: *"Read `experiments/minerva-gpt/NEXT_SESSION.md`, then run the context test on
-the pod I give you."* Everything needed is here or linked.
+Start a new chat with: *"Read `experiments/minerva-gpt/NEXT_SESSION.md` and `LIVE_CLASS_PLAN.md`, then
+help me with the next step."* Everything needed is here or linked.
+
+## Decision (4 Nov 2026): use `full`, no retraining
+
+**The live bot builds its prompts as `full`: my intro (tag, class header, activity, LOs/HCs, readings,
+pre-class work, poll on screen), then `Class so far:` with everything said up to that moment, then the
+ask and replies.** The weights don't change. This is about what goes in the prompt.
+
+**Pre-class work: include all of it by default (`full-pcw`), and keep this flexible.** It's a setting, not a
+fixed rule. The test found all of it and the first 300 words about even, so either is fine to use.
+
+**Every number and comparison is in [CONTEXT_TEST_RESULTS.md](CONTEXT_TEST_RESULTS.md).** The raw results (answers, per-answer scores, picks) stay on the Mac, gitignored, in `data/generations/7b/`, `data/judge-context/` and `runs/context-test-3nov/`.
+
+The test ran on an RTX Pro 6000 on 3-4 Nov: 618 held-out spoken answers from 84 classes. vLLM matched
+plain Transformers on long prompts (average gap 0.0025, and 0.0022 over 8,192 tokens; the limit was
+0.01), so the numbers can be trusted.
+
+| | `window` (control) | `tail` | **`full`** | `full-top` | `full-tag` | `full-pcw` | Me |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Verdict | | PASS | **UNSURE** | FAIL | FAIL | UNSURE | |
+| Loss on my answer | 2.609 | 2.528 | **2.514** | 2.525 | 2.537 | 2.514 | |
+| vs window | | -0.081 | **-0.095** | -0.084 | -0.072 | -0.095 | |
+| vs window, over 8,192 tokens | | -0.074 | **-0.092** | -0.081 | -0.065 | | |
+| Length vs window | | 1.02x | 1.12x | 0.90x | 1.21x | 1.07x | |
+| Median words | 61 | 65 | 75 | 53 | 75 | 71 | 55 |
+| "like" per 1,000 | 58.9 | 60.5 | 60.0 | 63.6 | 58.3 | 60.1 | 44.7 |
+| "I think" per 1,000 | 10.6 | 11.1 | 10.9 | 12.7 | 10.6 | 11.0 | 5.9 |
+| Cut off at the length limit | 7% | 8% | 9% | 5% | 11% | 8% | |
+| Answers stuck in a loop | 81 | 60 | 55 | 44 | 64 | 54 | |
+| Tried to write another speaker | 0 | 0 | 0 | 0 | 0 | 0 | |
+
+`full-tag` is `full` with `Answer as: Brady` repeated right before `<|assistant|>`. `full-pcw` is `full`
+with all of my pre-class work and each question in full, instead of the first 300 words and 12 words per
+question; 299 prompts changed.
+
+**What was found:**
+- **The whole class helps.** `full` has the best loss at every prompt length. The gain is about three
+  times the gap between models A and B (0.029), and it holds over 8,192 tokens.
+- **The voice tag being out of reach didn't hurt.** `full` leaves it out of reach of 24 of the 32 layers
+  on 76% of prompts, with habits no further from mine than the window. Keeping it in reach (`full-top`)
+  or repeating it (`full-tag`) was worse on loss, so don't add either without retesting.
+- **Structure matters.** The same text in a different order, or one extra line, moved loss and length,
+  so test any new prompt format first.
+- **Pre-class work doesn't appear to need all 32 layers.** On prompts over 4,096 tokens, `full` minus
+  `full-top` is -0.013 with pre-class work and -0.012 without (not randomly assigned, so strong support
+  rather than proof).
+- **Whole pre-class work made no measurable difference:** -0.0012 on loss vs `full` where the text changed
+  (95% -0.0028 to +0.0001), and answer length within noise. It costs a median of 239 tokens. All of it is
+  the default because that's what I'd have in mind when speaking, not because it scored better, and it stays
+  flexible. Watch "yeah / yep" in the replay (14.0 vs 9.1 per 1,000 words where the text changed, against my
+  7.6; the interval crosses zero). This doesn't show what pre-class work adds in itself: no version removed it.
+
+**Accepted or still open:**
+- **`full` is UNSURE on length only.** Answers run longer than mine (median 75 words vs 55), mostly because
+  it gives too few short answers: its longest 10% start at 184 words vs my 180. A stop boost on the
+  end-of-answer token (`logit_bias`) was considered and declined.
+- **"like" and "I think" are still too high** (about 1.3x and 1.8x my rate on the window too). That comes
+  from training, and adding class context doesn't fix it.
+- **Blind picks are too few to count:** 4 screens so far (`full` 2, `window` 2, `tail` 0), and about 20 are
+  needed. Rerun the page on the Mac (no pod needed):
+  `uv run python rank_server.py --model window=data/generations/7b/B-val-ctx-window.jsonl --model tail=data/generations/7b/B-val-ctx-tail.jsonl --model full=data/generations/7b/B-val-ctx-full.jsonl --source class_turn --per-model 1 --data data/judge-context`,
+  plus `--exclude` for each earlier `data/judge-7b/round*/rankings.jsonl` and for
+  `data/generations/7b/quick/context-test-answers.jsonl`.
+- **Not tested:** whether retraining would do better, and how this behaves live, since every prompt came
+  from a moment when I actually spoke. First-word delay on prompts this long is also unmeasured.
+
+**Measured speed** (RTX Pro 6000, FlashAttention 2, the existing settings): about 21,000 tokens/s scoring.
+The four-version run took 21 minutes. Triton was 24% slower. Bigger batches and turning off decoding gave no
+gain, and FlashInfer can't run this model (mixed sliding and full layers). `full-tag` and `full-pcw` ran
+from side scripts, kept with the logs in `runs/context-test-3nov/` (gitignored), not in the repo.
 
 ## Where things stand
 
@@ -13,9 +82,9 @@ the pod I give you."* Everything needed is here or linked.
   the same for variant A, and `bradyrutherford/minerva-olmo3-7b-B-mlx-8bit` for the Mac (`chat.py`).
 - **The full write-up** (data, LoRA on all 7 linear layers of all 32 blocks, DPO, results, decision
   log): a private Claude doc, https://claude.ai/artifact/CXBk6qpDn7mbfetS9bqdzD
-- **Merged:** PR #5 (H200 throughput, chat.py, 8-bit copy, rank page) and PR #6 (this test).
+- **Merged:** PR #5 (H200 throughput, chat.py, 8-bit copy, rank page), PR #6 and PR #7 (the context test).
 
-## The context test: what and why
+## The context test: what it was (for the record)
 
 The live bot (`LIVE_CLASS_PLAN.md`) wants the class so far in its prompt. The model was trained on
 short windows (median 743 tokens) and its replies were only ever my words, then end-of-text. The
@@ -76,8 +145,8 @@ collapse over 8,192 tokens rules out `full` and `full-top` even if the average i
 
 ## The pod
 
-- **GPU:** one **NVIDIA RTX Pro 6000, 96 GB** ($2.73/hour; about 1.5 hours, so about $4, an estimate
-  until the quick pass shows real speeds). Any 80 GB H100 or A100 also works. Needs driver 580+ (CUDA
+- **GPU:** one **NVIDIA RTX Pro 6000, 96 GB** ($2.73/hour; the run itself took 21 minutes, and the pod
+  was up about 1.5 hours with all benchmarks and extra versions, about $4.20). Any 80 GB H100 or A100 also works. Needs driver 580+ (CUDA
   13); `setup.sh` checks. It is a Blackwell card (SM120): by vLLM's code it defaults to FlashAttention
   2. If that won't run, `run_context_test.sh` retries with Triton attention, through `attention_config`
   because vLLM 0.32 ignores the old `VLLM_ATTENTION_BACKEND` variable.
@@ -126,7 +195,9 @@ averages over answers (habit rates, length) were noisier than they looked, and t
 picks came from those runs. The MLX temperature test doesn't use this code and also found "like" at
 about 1.5x my rate, so that stands. Each prompt now gets its own seed.
 
-## If the test says retrain: the full-class model
+## If a retrain is ever wanted: the full-class model
+
+The test did not call for this. Kept as the plan in case the live class shows otherwise.
 
 - **Format:** one sequence per class, the whole masked transcript with speaker tags (`Professor:`,
   `Student N:`, `Brady:`), class header, readings and my PCW at the top. The loss covers my lines
