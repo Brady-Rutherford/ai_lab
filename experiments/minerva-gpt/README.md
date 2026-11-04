@@ -117,8 +117,8 @@ Does the trained model answer as well, and still sound like me, with the class s
 **Yes: use the whole class (`full`), with no retraining.** `eval_context.py` compared the trained window
 with the last ~2,500 tokens of the class, the whole class before the ask, and the whole class at the very
 top, on 618 held-out spoken answers. The whole class had the best loss at every prompt length (-0.095 vs
-the trained window). Its answers run somewhat longer than mine, which is accepted for now. Results and the
-decision are in [NEXT_SESSION.md](NEXT_SESSION.md). `uv run python smoke_context.py` tests the code without a GPU.
+the trained window). Its answers run somewhat longer than mine, which is accepted for now. All the numbers are in
+[CONTEXT_TEST_RESULTS.md](CONTEXT_TEST_RESULTS.md), and the decision is in [NEXT_SESSION.md](NEXT_SESSION.md). `uv run python smoke_context.py` tests the code without a GPU.
 
 ## Planned
 

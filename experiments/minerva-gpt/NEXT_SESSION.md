@@ -9,6 +9,8 @@ help me with the next step."* Everything needed is here or linked.
 pre-class work, poll on screen), then `Class so far:` with everything said up to that moment, then the
 ask and replies.** The weights don't change. This is about what goes in the prompt.
 
+**Every number and comparison is in [CONTEXT_TEST_RESULTS.md](CONTEXT_TEST_RESULTS.md).** The raw results (answers, per-answer scores, picks) stay on the Mac, gitignored, in `data/generations/7b/`, `data/judge-context/` and `runs/context-test-3nov/`.
+
 The test ran on an RTX Pro 6000 on 3-4 Nov: 618 held-out spoken answers from 84 classes. vLLM matched
 plain Transformers on long prompts (average gap 0.0025, and 0.0022 over 8,192 tokens; the limit was
 0.01), so the numbers can be trusted.
