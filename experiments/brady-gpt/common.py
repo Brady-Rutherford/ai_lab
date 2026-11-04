@@ -17,12 +17,12 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"  # gitignored: everything derived from class recordings
 # gitignored: adapters can regurgitate training text. One folder per base model, e.g.
-# MINERVA_CHECKPOINTS=checkpoints/7b, so a 7B run never overwrites the 1B adapters.
-CHECKPOINTS = ROOT / os.environ.get("MINERVA_CHECKPOINTS", "checkpoints")
+# BRADY_GPT_CHECKPOINTS=checkpoints/7b, so a 7B run never overwrites the 1B adapters.
+CHECKPOINTS = ROOT / os.environ.get("BRADY_GPT_CHECKPOINTS", "checkpoints")
 
-# MINERVA_BASE_MODEL=allenai/Olmo-3-1025-7B for the 7B run; every script, vLLM's included,
+# BRADY_GPT_BASE_MODEL=allenai/Olmo-3-1025-7B for the 7B run; every script, vLLM's included,
 # reads it from here.
-BASE_MODEL = os.environ.get("MINERVA_BASE_MODEL", "allenai/OLMo-2-0425-1B")
+BASE_MODEL = os.environ.get("BRADY_GPT_BASE_MODEL", "allenai/OLMo-2-0425-1B")
 ME = "Brady"
 TAG_ME = "Answer as: Brady"
 TAG_CLASSMATE = "Answer as: a classmate"

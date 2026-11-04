@@ -21,7 +21,7 @@ The Mac builds and checks the data; the pod only trains and samples. The pattern
 There are two environments, because vLLM 0.32 pins torch 2.13 and transformers below 5.20,
 while training uses torch 2.14 and transformers 5.21.
 
-- `~/minerva-gpt/.venv` is the training environment from `uv.lock`, exactly what the Mac ran.
+- `~/brady-gpt/.venv` is the training environment from `uv.lock`, exactly what the Mac ran.
 - `~/vllm-env` is vLLM only. `generate.py --engine vllm` calls it with token ids, so it samples
   from exactly the prompts the training tokenizer made.
 
@@ -43,7 +43,7 @@ address is `HOST` and the port is `PORT`.
 
 **1. Mac: code from GitHub, data from the Mac** (~1 min)
 ```
-cd ~/ai_lab/experiments/minerva-gpt
+cd ~/ai_lab/experiments/brady-gpt
 bash pod/push.sh HOST PORT
 ```
 It refuses if the privacy gate fails, and if this folder differs from GitHub `main` (push and
@@ -52,24 +52,24 @@ merge first, so the pod runs exactly what you see). `CODE=mac` sends this Mac's 
 **2. Pod: set up and check** (~10 min)
 ```
 ssh HOST -p PORT
-bash ~/minerva-gpt/pod/setup.sh
-cd ~/minerva-gpt && uv run python pod/preflight.py      # must print "all passed"
+bash ~/brady-gpt/pod/setup.sh
+cd ~/brady-gpt && uv run python pod/preflight.py      # must print "all passed"
 GEN_ENGINE=vllm sh smoke_test.sh                          # whole pipeline on fake data, this GPU
 uv run python pod/speedcheck.py                           # turns the fast path on only if proven (~5 min)
 ```
 
 **3. Pod: session 1** (~30-40 min)
 ```
-tmux new -s minerva
-bash ~/minerva-gpt/pod/run.sh
+tmux new -s brady-gpt
+bash ~/brady-gpt/pod/run.sh
 ```
-- Detach with `Ctrl-b` then `d`. Come back with `tmux attach -t minerva`.
+- Detach with `Ctrl-b` then `d`. Come back with `tmux attach -t brady-gpt`.
 - Note the two "suggested --voice-gate" lines and the AUC verdicts.
 
 **4. Mac: bring results back, then wipe and terminate the pod**
 ```
 bash pod/pull.sh HOST PORT
-ssh HOST -p PORT 'bash ~/minerva-gpt/pod/wipe.sh'        # then terminate it in the dashboard
+ssh HOST -p PORT 'bash ~/brady-gpt/pod/wipe.sh'        # then terminate it in the dashboard
 ```
 
 **5. Mac: rank**
@@ -81,7 +81,7 @@ Open http://127.0.0.1:8765. Rank as many as you like, then try the blind test.
 **6. Session 2: DPO.** Rent a pod again, then steps 1-2 (push now also sends the rankings, the
 adapters and the samples), then:
 ```
-GATE_A=<from session 1> GATE_B=<from session 1> bash ~/minerva-gpt/pod/run_dpo.sh
+GATE_A=<from session 1> GATE_B=<from session 1> bash ~/brady-gpt/pod/run_dpo.sh
 ```
 Leave a variant's gate unset if its voice-score AUC check failed. Then step 4 again.
 
@@ -93,9 +93,9 @@ DPO uses SPIN pairs instead of rankings: my real answer beats the model's answer
 train ask.
 ```
 bash pod/push.sh HOST PORT                 # BRANCH=<branch> to run code that isn't on main yet
-ssh HOST 'bash ~/minerva-gpt/pod/setup.sh' # a fresh pod; preflight as in step 2
-tmux new -s minerva
-bash ~/minerva-gpt/pod/run_v2.sh           # VARIANTS="A" for one variant, SKIP_7B=1 to stop after 1B
+ssh HOST 'bash ~/brady-gpt/pod/setup.sh' # a fresh pod; preflight as in step 2
+tmux new -s brady-gpt
+bash ~/brady-gpt/pod/run_v2.sh           # VARIANTS="A" for one variant, SKIP_7B=1 to stop after 1B
 ```
 
 Per variant, `run_v2.sh` does:

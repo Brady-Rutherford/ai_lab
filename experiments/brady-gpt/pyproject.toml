@@ -1,5 +1,5 @@
 [project]
-name = "minerva-gpt"
+name = "brady-gpt"
 version = "0.1.0"
 description = "Post-train an open base model to answer like me in class (data stays local)"
 requires-python = ">=3.12"

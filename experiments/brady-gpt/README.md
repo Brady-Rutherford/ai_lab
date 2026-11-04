@@ -1,4 +1,4 @@
-# Minerva-GPT
+# Brady-GPT
 
 A model that answers like me in class and in assignments. It takes an open base model (OLMo)
 and post-trains it on data only I have: three years of Minerva class transcripts, my
@@ -55,7 +55,7 @@ Two adapters on one base:
 ## Setup
 
 ```bash
-cd experiments/minerva-gpt
+cd experiments/brady-gpt
 uv sync                                     # training env: torch (MPS), transformers, peft, trl
 uv run python download_model.py             # OLMo 2 1B base into the HF cache, size-verified
 ```
@@ -122,7 +122,7 @@ the trained window). Its answers run somewhat longer than mine, which is accepte
 
 ## Live demo (Colab)
 
-[`demo/minerva_live.ipynb`](demo/minerva_live.ipynb) shows how the model was trained, compares it with the base model and a Botnik-style predictive keyboard, replays five class moments, and answers live questions. [Open it in Colab](https://colab.research.google.com/github/Brady-Rutherford/ai_lab/blob/main/experiments/minerva-gpt/demo/minerva_live.ipynb).
+[`demo/brady_gpt_live.ipynb`](demo/brady_gpt_live.ipynb) shows how the model was trained, compares it with the base model and a Botnik-style predictive keyboard, replays five class moments, and answers live questions. [Open it in Colab](https://colab.research.google.com/github/Brady-Rutherford/ai_lab/blob/main/experiments/brady-gpt/demo/brady_gpt_live.ipynb).
 
 It needs a T4 GPU, my Hugging Face login as the Colab secret `HF_TOKEN`, and `data/demo/demo_data.json`, which `demo/make_demo_data.py` builds on my Mac and which never goes on GitHub. The notebook is saved without outputs, so no class text reaches this repo.
 

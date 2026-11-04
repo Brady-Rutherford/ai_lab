@@ -7,17 +7,17 @@
 # A rerun skips whatever is done, so after a crash just run it again.
 #
 # The HF login is needed only for the download, and is dropped right after it:
-#   ssh -p PORT USER@HOST 'cd ~/minerva-gpt && HF_TOKEN=$(cat) LIMIT=30 bash pod/run_context_test.sh' \
+#   ssh -p PORT USER@HOST 'cd ~/brady-gpt && HF_TOKEN=$(cat) LIMIT=30 bash pod/run_context_test.sh' \
 #     < ~/.cache/huggingface/token
 # Options: LIMIT=30 (a quick pass; its results go to data/generations/7b/quick), TAIL=2500 (tokens of
 # the class for `tail`), CROSSCHECK=30 (prompts compared), BACKEND=TRITON_ATTN (force an attention backend).
 # Then pull.sh brings back data/generations/7b/context-test.json and the files beside it.
 set -euo pipefail
-cd "$HOME/minerva-gpt"
+cd "$HOME/brady-gpt"
 export PATH="$HOME/.local/bin:$PATH"
 MODEL="$HOME/models/dpobest-B"
 SHA="${MODEL_SHA:-46b49e7042e21e698794648e9da50b73fe017ce9bcebd5a74c332f97953a7c11}"  # model.safetensors, HF main
-LOG="$HOME/minerva.log"
+LOG="$HOME/brady-gpt.log"
 OUT=data/generations/7b
 CHOSEN="$OUT/context-backend.txt"  # the backend that passed the check; a rerun reuses it
 RUNNING="$OUT/context-test.running"  # there until the run ends well; pull.sh won't call a run with it finished

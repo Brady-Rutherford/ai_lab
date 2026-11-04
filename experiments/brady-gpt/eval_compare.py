@@ -1,6 +1,6 @@
 """Head-to-head on the same footing: how well each model predicts MY held-out answers.
 
-    MINERVA_BASE_MODEL=allenai/Olmo-3-1025-7B uv run python eval_compare.py \
+    BRADY_GPT_BASE_MODEL=allenai/Olmo-3-1025-7B uv run python eval_compare.py \
         checkpoints/7b/sft-A checkpoints/7b/sft-B [checkpoints/7b/final-dpobest-A ...]
 
 The val loss train_sft.py logs is not comparable across variants: B's val set includes

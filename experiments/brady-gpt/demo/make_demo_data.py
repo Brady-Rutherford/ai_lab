@@ -1,4 +1,4 @@
-"""Build the private file that minerva_live.ipynb asks you to upload. It stays off GitHub.
+"""Build the private file that brady_gpt_live.ipynb asks you to upload. It stays off GitHub.
 
     uv run python demo/make_demo_data.py            # picks the moments at random
     uv run python demo/make_demo_data.py --pick ID,ID,ID,ID,ID
