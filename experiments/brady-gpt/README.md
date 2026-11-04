@@ -126,6 +126,8 @@ the trained window). Its answers run somewhat longer than mine, which is accepte
 
 It needs a T4 GPU, my Hugging Face login as the Colab secret `HF_TOKEN`, and `data/demo/demo_data.json`, which `demo/make_demo_data.py` builds on my Mac and which never goes on GitHub. The notebook is saved without outputs, so no class text reaches this repo.
 
+For live questions only, [`demo/brady_gpt_ask_live.ipynb`](demo/brady_gpt_ask_live.ipynb) ([open in Colab](https://colab.research.google.com/github/Brady-Rutherford/ai_lab/blob/main/experiments/brady-gpt/demo/brady_gpt_ask_live.ipynb)) loads just my model. `demo/pick_moment.py` cuts any class off at any point and copies the text to paste into it. `demo/run_with_outputs.py` and `pod/run_demo.sh` run the full notebook on a rented GPU and save a copy with outputs under `data/`, which stays on my Mac.
+
 ## Planned
 
 - **A live class:** the model takes part in one online CS156 session as me, with the professor's

@@ -5,7 +5,7 @@
 
 Reads the masked held-out results on this Mac and writes data/demo/demo_data.json (gitignored):
   moments    five held-out class moments: the ask, my real answer, the saved model answer, the prompt
-  scorecard  20 other held-out prompts with my real answers and the full-precision loss on each
+  scorecard  other held-out prompts (20 by default) with my real answers and the full-precision loss on each
   my_answers my own spoken answers from the training split, for the predictive-text baseline
 """
 
@@ -83,6 +83,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pick", help="comma-separated ids instead of the random pick")
     ap.add_argument("--show", action="store_true", help="print the picked moments")
+    ap.add_argument("--scorecard", type=int, default=N_SCORECARD, help="how many scorecard questions; 20 suits a T4")
     args = ap.parse_args()
 
     window, tail, saved = by_id("window"), by_id("tail"), by_id("full-pcw")
@@ -119,7 +120,7 @@ def main():
         {"course": course_of(window[i]["prompt"][0]["content"]), "ask": the_ask(window[i]["prompt"][0]["content"]),
          "prompt": window[i]["prompt"][0]["content"], "real": window[i]["real"],
          "full_loss": loss_of[window[i]["prompt"][0]["content"]]}
-        for i in others[:N_SCORECARD]
+        for i in others[:args.scorecard]
     ]
     mine = [r["completion"][0]["content"] for r in read(ROOT / "data/sft/train.jsonl") if r["source"] == "class_turn"]
 
