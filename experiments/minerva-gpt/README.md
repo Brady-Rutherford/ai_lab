@@ -1,4 +1,4 @@
-# Minerva-GPT
+# Brady-GPT
 
 A model that answers like me in class and in assignments. It takes an open base model (OLMo)
 and post-trains it on data only I have: three years of Minerva class transcripts, my
